@@ -1,0 +1,7 @@
+.buildpath
+.htaccess
+.project
+.settings/
+docs/
+realtime_tool.conf.php
+tests/
