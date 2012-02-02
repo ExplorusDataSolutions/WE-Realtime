@@ -15,7 +15,7 @@ $modelLog->debug('get last command');
  * Test scripts
  * @var unknown_type
  */
-if (0) {
+if (1) {
 	$modelTextdata = $controller->getModel('Textdata');
 	
 	
@@ -34,6 +34,12 @@ if (0) {
 	$basin_id = 1;
 	$infotype_id = 1;
 	$station_strid = 'RPEACAR';
+	$station_descriptor = 'Peace River at Carcajou';
+	$station_version	= 0;
+	
+	$basin_id = 4;
+	$infotype_id = 6;
+	$station_strid = 'ABEE';
 	$station_descriptor = 'Peace River at Carcajou';
 	$station_version	= 0;
 	
@@ -62,7 +68,7 @@ if (0) {
 			$ref_station_code ? $ref_station_code : $station_strid
 	);
 	$result['station'] = $station_strid;
-	//pre($result,1);
+	pre($result,1);
 	
 	// 保存抓取内容
 	/*$text_id = $modelTextdata->updateTextdataContent(
