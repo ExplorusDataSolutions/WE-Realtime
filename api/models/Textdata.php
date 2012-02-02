@@ -583,8 +583,11 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		 * @date 2012-01-25 21:27 初三
 		 * @todo parse 070C001 in below title
 		 *   Chinchaga River near High Level(07OC001) - Table
+		 *   
+		 * @date 2012-02-02 23:54
+		 *   case: Chinchaga River near High Level(07OC001) - Table
 		 */
-		if (preg_match("/<h1>$StationDescriptor.*?\((.*?)\)/is", $html, $m)) {
+		if (preg_match("/<h1>.*?\((.*?)\) - Table/is", $html, $m)) {
 			$StationCode = $m[1];
 		}
 		

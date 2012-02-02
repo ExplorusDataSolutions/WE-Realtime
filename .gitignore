@@ -5,3 +5,5 @@
 docs/
 realtime_tool.conf.php
 tests/
+library/
+application/views/scripts/realtime
