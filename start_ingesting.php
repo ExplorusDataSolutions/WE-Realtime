@@ -15,7 +15,7 @@ $modelLog->debug('get last command');
  * Test scripts
  * @var unknown_type
  */
-if (1) {
+if (0) {
 	$modelTextdata = $controller->getModel('Textdata');
 	
 	
