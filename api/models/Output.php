@@ -19,6 +19,8 @@ class WERealtime_Model_Output {
 				echo json_encode($result);
 				break;
 			case 'text':
+				echo $result;
+				break;
 			case 'TAB':
 				header('Content-Type: text/plain');
 				echo ML::response_text($result);
@@ -32,7 +34,7 @@ class WERealtime_Model_Output {
 			case 'PHP Serialized':
 				echo serialize($result);
 				break;
-			case 'print_r':
+			case 'pre':
 				header('Content-Type: text/plain');
 				print_r($result);
 				break;

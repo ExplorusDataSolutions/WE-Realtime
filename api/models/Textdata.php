@@ -18,6 +18,9 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 			'StationId' => 'station_strid',
 			'Version' => 'version',
 			'IngestTime' => 'update_time',
+			'Status' =>'status',
+			'NewRecords' => 'inserted_num',
+			'AllRecords' => 'records_num',
 	);
 	public function getTable() {
 		return 'textdata';
@@ -517,6 +520,16 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		
 		return $this->connect()->fetchOne($sql);
 	}
+	public function getTextdataById($text_id) {
+		$text_id		= intval($text_id);
+		
+		$sql = "
+			SELECT	text_content AS text
+			FROM	`" . $this->getTable() . "`
+			WHERE	id		= $text_id
+		";
+		return $this->connect()->fetchOne($sql);
+	}
 	public function getTextdataByVersion($basin_id, $infotype_id, $station_strid, $version) {
 		$basin_id		= intval($basin_id);
 		$infotype_id	= intval($infotype_id);
@@ -524,14 +537,14 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		$version		= intval($version);
 		
 		$sql = "
-			SELECT	" . $this->getPropertiesString() . "
+			SELECT	text_content AS text
 			FROM	`" . $this->getTable() . "`
 			WHERE	basin_id		= $basin_id
 				AND	infotype_id		= $infotype_id
 				AND	station_strid	= '".addslashes($station_strid)."'
 				AND	version			= $version
 		";
-		return $this->connect()->fetch($sql);
+		return $this->connect()->fetchOne($sql);
 	}
 	
 	public function setStatus($basin_id, $infotype_id, $station_strid, $version, $status) {
@@ -813,6 +826,24 @@ RBIRALIC : Birch River below Alice Creek
 			default:
 				return false;
 		}
+	}
+	
+	/*
+	 * Web UI 
+	 */
+	public function getTextdataList($basin_id, $infotype_id, $station_strid) {
+		$basin_id		= intval($basin_id);
+		$infotype_id	= intval($infotype_id);
+		$station_strid	= strval($station_strid);
+		
+		$sql = "
+			SELECT	" . $this->getPropertiesString() . "
+			FROM	`" . $this->getTable() . "`
+			WHERE	basin_id		= $basin_id
+				AND	infotype_id		= $infotype_id
+				AND	station_strid	= '".addslashes($station_strid)."'
+		";
+		return $this->connect()->fetchAll($sql);
 	}
 }
 ?>

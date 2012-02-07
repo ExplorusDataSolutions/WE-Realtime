@@ -165,33 +165,57 @@ class WERealtime_Model_Log extends ML_Model_Table {
 		return $this->connect()->fetchAll($sql);
 	}
 	
-	public function getVersionList() {
+	public function getVersionList($start = 0, $limit = 25) {
+		$limit = intval($limit);
 		$sql = "
-			SELECT	a.value AS version
-					, b.*
+			SELECT	a.version
+					, b.serial
+					, b.name
+					, b.value
+					, b.time
 			FROM	(
-				SELECT	value, MAX(serial) serial
-				FROM	`logs`
+				SELECT	value AS version	-- 1 ingesting version can be finished by many times(1 time is called 1 serial)
+						, MAX(serial) serial
+				FROM	`" . $this->getTable() . "`
 				WHERE	name = 'start ingesting'
 				GROUP BY
 				 		value			-- this can make only show the first serial
 				ORDER BY
 				 		0+value DESC	-- convert from string to number
-				LIMIT 10
+				LIMIT $start, $limit
 			) AS a
-			JOIN	logs AS b
-				ON	a.serial = b.serial
+			JOIN	`" . $this->getTable() . "` AS b
+				ON	a.serial = b.serial	-- get other information of this serial
 			ORDER BY
 				b.serial DESC
 		";
-		$rows = $this->connect('realtime')->fetchAll($sql);
+		$rows = $this->connect()->fetchAll($sql);
 		
 		$logs = array();
+		$list = array();
 		foreach ($rows as $row) {
-			$logs[$row['version']][$row['serial']][$row['name']] = $row['value'];
-			$logs[$row['version']][$row['serial']][$row['name'] . '_time'] = $row['time'];
+			$v = $row['version'];
+			$s = $row['serial'];
+			if (empty($logs[$v][$s])) {
+				$logs[$v][$s] = array();
+				$list[] = &$logs[$v][$s];
+			}
+			$n = $row['name'];
+			if ($n == 'start ingesting') {
+				$logs[$v][$s]['version'] = intval($row['value']);
+				$logs[$v][$s]['start_time'] = $row['time'];
+			} elseif ($n == 'finish ingesting') {
+				$logs[$v][$s]['total'] = intval($row['value']);
+				$logs[$v][$s]['end_time'] = $row['time'];
+			} elseif ($n == 'current ingesting') {
+				$logs[$v][$s]['final_status'] = $row['value'];
+				$logs[$v][$s]['status_time'] = $row['time'];
+			} else {
+				$logs[$v][$s][$n] = $row['value'];
+				$logs[$v][$s][$n . '_time'] = $row['time'];
+			}
 		}
-		return $logs;
+		return $list;
 	}
 	function sync() {
 		

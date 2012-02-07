@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 		$phpInput = stripslashes($phpInput);
 	}
 	
-	$request = json_decode($phpInput);
+	$request = json_decode($phpInput);//echo '<pre>'.print_R($request,1).'</pre>';exit;
 	if ($request->request) {
 		require_once 'conf.php';
 		require_once 'api/WERealtimeAPIController.php';
@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 		
 		$action = $request->request;
 		if (method_exists($controller, $action)) {
-			$result = $controller->$action();
+			$result = $controller->$action($request);
 		} else {
 			echo "Wrong action: $action";
 			exit(0);
@@ -27,6 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 		
 		if (!is_null($result)) {
 			$modelOutput = $controller->getModel('Output');
+			$format = isset($request->format) ? $request->format : 'pre';
 			$modelOutput->output($result, $format);
 		}
 		exit(0);
@@ -34,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 }
 
 
-require_once 'public/index.php';
+require_once 'app.html';
 exit(0);
 
 

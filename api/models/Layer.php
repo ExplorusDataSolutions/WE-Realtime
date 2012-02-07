@@ -196,6 +196,34 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 		";
 		return $this->connect('realtime-tool')->fetchAll($sql);
 	}
+	public function getStationLayerList($station_strid) {
+		$sql = "
+			SELECT	sl.id
+					, l.layerid
+					, l.field
+					, l.description
+					, sl.begintime begintime
+					, sl.endtime endtime
+					, sl.basin_id
+					, sl.infotype_id
+			FROM	layer l
+			JOIN	station_layer sl
+				ON	l.field = sl.field
+			WHERE	sl.station_strid = '" . addslashes($station_strid) . "'
+			ORDER BY
+					IF (l.description != '', l.description, l.field)
+		";
+		$rows = $this->connect()->fetchAll($sql);
+		
+		foreach ($rows as &$row) {
+			$row['id'] = intval($row['id']);
+			$row['layerid'] = intval($row['layerid']);
+			$row['basin_id'] = intval($row['basin_id']);
+			$row['infotype_id'] = intval($row['infotype_id']);
+		}
+		
+		return $rows;
+	}
 	public function getLayerBBoxList() {
 		$tbname = $this->createPgRealtimeLayerList();
 		
@@ -405,6 +433,51 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 			$result = $this->connect('realtime-data')->fetchAll($sql);
 		}
 		
+		return $result;
+	}
+	function getLayerDataList($basin_id, $infotype_id, $station_strid, $field, $begintime = '', $endtime = '') {
+		$basin_id = intval($basin_id);
+		$infotype_id = intval($infotype_id);
+		$station_strid = preg_replace('/[^0-9a-zA-Z]/', '', $station_strid);
+	
+		$tbname = 'basin_'.$basin_id.'_datatype_'.$infotype_id.'_'.strtolower($station_strid);
+	
+		$sql = "SHOW TABLES LIKE '$tbname'";
+		$tableList = $this->connect('realtime-data')->fetchAll($sql);
+	
+		$result = array();
+		if (!empty($tableList) && $field) {
+			global $cfg;
+	
+			$sql = "
+				SELECT	COUNT(*)
+				FROM	`".addslashes($tbname)."`
+				WHERE	TRUE"
+				.($begintime ? "
+					AND	date_and_time >= '$begintime'" : "")
+					.($endtime ? "
+							AND	date_and_time <= '$endtime'" : "")."
+							AND	!(`$field` > -1000 AND `$field` <= -999)
+							";
+			$total = $this->connect('realtime-data')->fetchColumn($sql);
+	
+			$sql = "
+				SELECT	date_and_time time
+						, `$field` value
+						, text_id
+				FROM	`".addslashes($tbname)."`
+				WHERE	TRUE"
+					. ($begintime ? "
+					AND	date_and_time >= '$begintime'" : "")
+					. ($endtime ? "
+					AND	date_and_time <= '$endtime'" : "") . "
+					AND	!(`$field` > -1000 AND `$field` <= -999)
+				ORDER BY
+						date_and_time DESC
+			";
+			$result = $this->connect('realtime-data')->fetchAll($sql);
+		}
+	
 		return $result;
 	}
 }

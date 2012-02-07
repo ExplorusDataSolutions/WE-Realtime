@@ -286,12 +286,15 @@ class WERealtimeAPIController {
 body {
 	font-size: 12px
 }
+
 dl dt {
 	font-size: 24px
 }
-input, dl dd {
+
+input,dl dd {
 	font-size: 16px
 }
+
 textarea {
 	font-size: 12px
 }
@@ -299,16 +302,20 @@ textarea {
 </head>
 
 <body>
-<dl>
-<dt>Stations Call</dt>
-<dd><a href="<?php echo $baseUrl?>/stations"><?php echo $baseUrl?>/stations</a>
-	(<a href="<?php echo $baseUrl?>/stations?XML">XML</a>)</dd>
-<dt>Station Layer Data Call:</dt>
-<dd>
-<form method="post" action="<?php echo $baseUrl?>/postjsondata/" enctype="text/xml">
-<input type="submit" value="Post" /> below data to <?php echo $baseUrl?>/station
-(<a href="javascript:void(0)" onclick="var fm=document.getElementsByTagName('form')[1];fm.action+='?XML';fm.submit()">XML</a>)<br />
-<textarea name="jsondata" cols="80" rows="9"><?php echo '{
+	<dl>
+		<dt>Stations Call</dt>
+		<dd>
+			<a href="<?php echo $baseUrl?>/stations"><?php echo $baseUrl?>/stations</a>
+			(<a href="<?php echo $baseUrl?>/stations?XML">XML</a>)
+		</dd>
+		<dt>Station Layer Data Call:</dt>
+		<dd>
+			<form method="post" action="<?php echo $baseUrl?>/postjsondata/"
+				enctype="text/xml">
+				<input type="submit" value="Post" /> below data to <?php echo $baseUrl?>/station
+(<a href="javascript:void(0)"
+					onclick="var fm=document.getElementsByTagName('form')[1];fm.action+='?XML';fm.submit()">XML</a>)<br />
+				<textarea name="jsondata" cols="80" rows="9"><?php echo '{
     "request" : "getdata",
     "serviceid" : 2,
     "layerid" : "value",
@@ -317,9 +324,10 @@ textarea {
         "endtime" : "' . $s['time']['endtime'] . '" 
     },
     "station" : "Abee AGDM"
-}'?></textarea></form>
-</dd>
-</dl>
+}'?></textarea>
+			</form>
+		</dd>
+	</dl>
 </body>
 </html>
 <?php
@@ -419,7 +427,8 @@ textarea {
 		
 		ML::head(array('title' => 'Real-time Data Ingesting Tool - Alberta Water Portal'));
 ?>
-<link type="text/css" rel="stylesheet" href="../../themes/default/realtime.css"/>
+<link type="text/css" rel="stylesheet"
+	href="../../themes/default/realtime.css" />
 <script type="text/javascript" src="../../js/firefly.js"></script>
 <script type="text/javascript">
 var parameters = eval('(<?php echo ML::json_encode($method_rps)?>)');
@@ -429,37 +438,38 @@ var paramvalues = eval('(<?php echo ML::json_encode($paramValues)?>)');
 
 <body>
 
-<h1>API demo</h1>
-<table id="tb" border="1" width="100%" cellpadding="3" cellspacing="1">
-	<tr>
-		<td width="100">API name</td>
-		<td><select id="sel_actions" onchange="selectParameters()">
+	<h1>API demo</h1>
+	<table id="tb" border="1" width="100%" cellpadding="3" cellspacing="1">
+		<tr>
+			<td width="100">API name</td>
+			<td><select id="sel_actions" onchange="selectParameters()">
 		<?php foreach ($rms as $rm):?>
 		<option><?php echo $rm->getName()?></option>
 		<?php endforeach;?>
 		</select></td>
-	</tr>
-	<tr>
-		<td>Parameters</td>
-		<td><table id="tb_parameters" border="0" width="100%" cellpadding="3" cellspacing="1" bgcolor="Silver"></table></td>
-	</tr>
-	<tr>
-		<td>Returned format</td>
-		<td><select id="sel_format" onchange="getAPI()">
-		<option>XML</option>
-		<option>JSON</option>
-		<option>RSS</option>
-		<option>PHP Serialized</option>
-		<option>TAB</option>
-		</select></td>
-	</tr>
-	<tr>
-		<td>API URL</td>
-		<td><a id="api" target="ifm_api"></a></td>
-	</tr>
-</table>
-<iframe id="ifm_api" name="ifm_api" width="100%" frameborder="0"></iframe>
-<script type="text/javascript">
+		</tr>
+		<tr>
+			<td>Parameters</td>
+			<td><table id="tb_parameters" border="0" width="100%" cellpadding="3"
+					cellspacing="1" bgcolor="Silver"></table></td>
+		</tr>
+		<tr>
+			<td>Returned format</td>
+			<td><select id="sel_format" onchange="getAPI()">
+					<option>XML</option>
+					<option>JSON</option>
+					<option>RSS</option>
+					<option>PHP Serialized</option>
+					<option>TAB</option>
+			</select></td>
+		</tr>
+		<tr>
+			<td>API URL</td>
+			<td><a id="api" target="ifm_api"></a></td>
+		</tr>
+	</table>
+	<iframe id="ifm_api" name="ifm_api" width="100%" frameborder="0"></iframe>
+	<script type="text/javascript">
 var apiURL = document.location.href;
 function selectParameters() {
 	var sel_action = document.getElementById('sel_actions');
@@ -575,6 +585,43 @@ ifm_api.style.height = document.body.offsetHeight - tb.offsetTop - tb.offsetHeig
 </body>
 </html>
 <?php
+	}
+	
+	public function ingestingVersionList() {
+		$modelLog = $this->getModel('Log');
+		return $modelLog->getVersionList();
+	}
+	public function stationList() {
+		$modelStation = $this->getModel('Station');
+		return $modelStation->getStationList();
+	}
+	public function stationLayerList($request) {
+		$modelLayer = $this->getModel('Layer');
+		$station = isset($request->station) ? $request->station : '';
+		return $modelLayer->getStationLayerList($station);
+	}
+	public function textdataHistoryList($request) {
+		$modelTextdata = $this->getModel('Textdata');
+		$basin_id = $request->basin_id;
+		$infotype_id = $request->infotype_id;
+		$station_strid = $request->station_strid;
+		
+		return $modelTextdata->getTextdataList($basin_id, $infotype_id, $station_strid);
+	}
+	public function singleTextdata($request) {
+		$modelTextdata = $this->getModel('Textdata');
+		$text_id = $request->text_id;
+		
+		return $modelTextdata->getTextdataById ( $text_id );
+	}
+	public function layerDataList($request) {
+		$modelLayer = $this->getModel ( 'Layer' );
+		$basin_id = $request->basin_id;
+		$infotype_id = $request->infotype_id;
+		$station_strid = $request->station_strid;
+		$layer = $request->layer;
+		
+		return $dataList = $modelLayer->getLayerDataList($basin_id, $infotype_id, $station_strid, $layer);
 	}
 }
 ?>

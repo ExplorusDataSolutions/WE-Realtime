@@ -1,5 +1,6 @@
 <?php
 error_reporting(E_ALL^E_WARNING);
+ini_set('display_errors', 'on');
 
 /**
  * Override some consts of ML_.*

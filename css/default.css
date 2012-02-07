@@ -1,0 +1,10 @@
+@CHARSET "utf-8";
+
+span.we-date {
+	font-size: 10px;
+	color: silver
+}
+span.we-h2 {
+	font-size: 12px;
+	color: gray
+}

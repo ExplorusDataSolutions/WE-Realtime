@@ -47,40 +47,27 @@ class WERealtime_Model_Station extends ML_Model_Table {
 		
 		return $this->connect('realtime-tool')->fetchAll($sql);
 	}
-	function getList() {
-		$sql = "
-			SELECT	b.basin_id
-					, b.descriptor basin_descriptor
-					, i.infotype_id
-					, i.descriptor infotype_descriptor
-					, s.station_strid
-					, s.descriptor station_descriptor
-					, s.html_version
-			FROM	station s
-			JOIN	stations_html sh
-			 	ON	s.html_id = sh.id
-			JOIN	basin_infotype i
-			 	ON	sh.iid = i.id
-			JOIN	basin b
-				ON	i.bid = b.id
-			WHERE	s.status = 'current'
-		";
-		
-		return $this->connect('realtime-tool')->fetchAll($sql);
-	}
-	function getDistinctList() {
+	function getStationList() {
 		$sql = "
 			SELECT	s.id
-					, s.station_strid
-					, s.descriptor station_descriptor
-					, s.html_version
-			FROM	station s
+					, s.station_strid AS strid
+					, s.descriptor AS description
+					, '' AS code
+			FROM	`" . $this->getTable() . "` AS s
 			WHERE	s.status = 'current'
 			GROUP BY
-					s.station_strid
+					s.station_strid	-- 669 strid with 1023 station
+			ORDER BY
+					description
 		";
 		
-		return $this->connect('realtime-tool')->fetchAll($sql);
+		$rows = $this->connect()->fetchAll($sql);
+		
+		foreach ($rows as $i => &$row) {
+			$row['id'] = intval($row['id']);
+		}
+		
+		return $rows;
 	}
 	function getListByBasinInfotypeId($basin_id, $infotype_id) {
 		$basin_id = intval($basin_id);
