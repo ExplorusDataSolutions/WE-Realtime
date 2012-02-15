@@ -598,30 +598,71 @@ ifm_api.style.height = document.body.offsetHeight - tb.offsetTop - tb.offsetHeig
 	public function stationLayerList($request) {
 		$modelLayer = $this->getModel('Layer');
 		$station = isset($request->station) ? $request->station : '';
-		return $modelLayer->getStationLayerList($station);
+		$stationLayerList = $modelLayer->getStationLayerList($station);
+		
+		// getting basin and data type list separately can make table 'basin' and 'datatype'
+		//   independently removable
+		$basinList = array();
+		$dataTypeList = array();
+		if (! empty ( $stationLayerList )) {
+			$basinIds = array();
+			$dataTypeIds = array();
+			foreach ( $stationLayerList as $layer ) {
+				$basin_id = $layer['basin_id'];
+				if (!isset($basinIds[$basin_id])) {
+					$basinIds[$basin_id] = $basin_id;
+				}
+				$datatype_id = $layer['datatype_id'];
+				if (!isset($dataTypeIds["$basin_id,$datatype_id"])) {
+					$dataTypeIds["$basin_id,$datatype_id"] = array($basin_id, $datatype_id);
+				}
+			}
+			$modelBasin = $this->getModel('Basin');
+			$basinList = $modelBasin->getBasinListByIds($basinIds);
+			
+			$modelDatatype = $this->getModel('Datatype');
+			$dataTypeList = $modelDatatype->getDatatypeListByIds($dataTypeIds);
+		}
+		
+		return array(
+				'stationLayerList' => $stationLayerList,
+				'message' => compact('basinList', 'dataTypeList')
+		);
 	}
 	public function textdataHistoryList($request) {
 		$modelTextdata = $this->getModel('Textdata');
 		$basin_id = $request->basin_id;
-		$infotype_id = $request->infotype_id;
+		$datatype_id = $request->datatype_id;
 		$station_strid = $request->station_strid;
 		
-		return $modelTextdata->getTextdataList($basin_id, $infotype_id, $station_strid);
+		return $modelTextdata->getTextdataList($basin_id, $datatype_id, $station_strid);
 	}
 	public function singleTextdata($request) {
 		$modelTextdata = $this->getModel('Textdata');
-		$text_id = $request->text_id;
 		
-		return $modelTextdata->getTextdataById ( $text_id );
+		if (!empty($request->text_id)) {
+			$text_id = $request->text_id;
+			$textdata = $modelTextdata->getTextdataById ( $text_id );
+			return $textdata;
+		} else {
+			$basin_id = $request->basin_id;
+			$datatype_id = $request->datatype_id;
+			$station_strid = $request->station_strid;
+			$description = $request->description;
+			
+			$url = $modelTextdata->ingestUrl($basin_id, $datatype_id, $station_strid);
+			$textdata = $modelTextdata->ingestTextdata($url, $description);
+			return array('Url' => $url, 'Text' => $textdata);
+		}
 	}
 	public function layerDataList($request) {
 		$modelLayer = $this->getModel ( 'Layer' );
 		$basin_id = $request->basin_id;
-		$infotype_id = $request->infotype_id;
+		$datatype_id = $request->datatype_id;
 		$station_strid = $request->station_strid;
 		$layer = $request->layer;
 		
-		return $dataList = $modelLayer->getLayerDataList($basin_id, $infotype_id, $station_strid, $layer);
+		return $dataList = $modelLayer->getLayerDataList($basin_id, $datatype_id, $station_strid, $layer);
 	}
 }
 ?>

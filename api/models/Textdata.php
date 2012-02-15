@@ -16,6 +16,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 			'BasinId' =>	'basin_id',
 			'TypeId' => 'infotype_id',
 			'StationId' => 'station_strid',
+			'Text' => 'text_content',
 			'Version' => 'version',
 			'IngestTime' => 'update_time',
 			'Status' =>'status',
@@ -521,14 +522,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		return $this->connect()->fetchOne($sql);
 	}
 	public function getTextdataById($text_id) {
-		$text_id		= intval($text_id);
-		
-		$sql = "
-			SELECT	text_content AS text
-			FROM	`" . $this->getTable() . "`
-			WHERE	id		= $text_id
-		";
-		return $this->connect()->fetchOne($sql);
+		return $this->getRecordByProperty('Id', $text_id);
 	}
 	public function getTextdataByVersion($basin_id, $infotype_id, $station_strid, $version) {
 		$basin_id		= intval($basin_id);
@@ -582,13 +576,15 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 			return false;
 		}
 	}
-	public function ingestTextdata($BasinID, $DataType, $StationID, $StationDescriptor, &$StationCode) {
+	public function ingestUrl($BasinID, $DataType, $StationID) {
 		global $cfg;
-		$BasinID = intval($BasinID);
-		$DataType = intval($DataType);
-		$StationID = strval($StationID);
-		
-		$url = $cfg['urls']['realtime']."?Type=Table&BasinID=$BasinID&DataType=$DataType&StationID=$StationID";
+		return $cfg['urls']['realtime']
+			. "?Type=Table"
+			. "&BasinID=$BasinID"
+			. "&DataType=$DataType"
+			. "&StationID=$StationID";
+	}
+	public function ingestTextdata($url, $StationDescriptor, &$StationCode) {
 		$html = $this->ingestHtml($url);
 		//$html = '<p><a id="ctl00_ctl00_cphContentSection_MainContentArea_ctl00_OriginalFile" href="/forecasting/data/hydro/tables/ATH-RATHATH-WL.txt">View File</a></p>';
 		
@@ -605,6 +601,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		}
 		
 		if (preg_match_all('/href="([^>]*)">view file<\/a>/is', $html, $m)) {
+			global $cfg;
 			$url = $cfg['urls']['realtime_text'].$m[1][0];
 			return $this->ingestHtml($url);
 		} else {
@@ -843,7 +840,17 @@ RBIRALIC : Birch River below Alice Creek
 				AND	infotype_id		= $infotype_id
 				AND	station_strid	= '".addslashes($station_strid)."'
 		";
-		return $this->connect()->fetchAll($sql);
+		$rows = $this->connect()->fetchAll($sql);
+		
+		$objs = array();
+		foreach ($rows as $row) {
+			$obj = $this->object($row);
+			$obj->NewRecords = intval($obj->NewRecords);
+			$obj->AllRecords = intval($obj->AllRecords);
+			$objs[] = $obj;
+		}
+		
+		return $objs;
 	}
 }
 ?>

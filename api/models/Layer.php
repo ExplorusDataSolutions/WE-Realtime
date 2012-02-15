@@ -198,28 +198,34 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 	}
 	public function getStationLayerList($station_strid) {
 		$sql = "
-			SELECT	sl.id
-					, l.layerid
-					, l.field
-					, l.description
+			SELECT	s.station_strid
+					, s.basin_id
+					, s.infotype_id datatype_id
+					, sl.field
 					, sl.begintime begintime
 					, sl.endtime endtime
-					, sl.basin_id
-					, sl.infotype_id
-			FROM	layer l
-			JOIN	station_layer sl
-				ON	l.field = sl.field
-			WHERE	sl.station_strid = '" . addslashes($station_strid) . "'
+					, l.layerid
+					, l.description
+			FROM	station s
+			LEFT JOIN
+					station_layer sl
+				ON	s.station_strid = sl.station_strid
+				AND	s.basin_id = sl.basin_id
+				AND	s.infotype_id = sl.infotype_id
+			LEFT JOIN
+					layer l
+				ON	sl.field = l.field
+			WHERE	s.station_strid = '" . addslashes($station_strid) . "'
+				AND	s.status = 'current'
 			ORDER BY
 					IF (l.description != '', l.description, l.field)
 		";
 		$rows = $this->connect()->fetchAll($sql);
 		
 		foreach ($rows as &$row) {
-			$row['id'] = intval($row['id']);
 			$row['layerid'] = intval($row['layerid']);
 			$row['basin_id'] = intval($row['basin_id']);
-			$row['infotype_id'] = intval($row['infotype_id']);
+			$row['datatype_id'] = intval($row['datatype_id']);
 		}
 		
 		return $rows;
