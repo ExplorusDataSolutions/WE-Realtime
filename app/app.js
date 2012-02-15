@@ -198,18 +198,15 @@ var app = {
 				me.goForward(cards.textdataHistoryCard);
 			}
 			
-			/*if (el.className == 'x-list-item-label') {
+			if (el.className == 'x-list-item-label') {
 				cards.layerDataListCard.WEData = {
 					basin_id : record.get('basin_id'),
 					datatype_id : record.get('datatype_id'),
 					station_strid : card.WEData.get('strid'),
 					layer : record.get('field'),
 				}
-				cards.setActiveItem(cards.layerDataListCard, {
-					type : 'slide',
-					direction : 'right'
-				});
-			}*/
+				me.goForward(cards.layerDataListCard);
+			}
 			return false;
 		})
 	},
@@ -315,64 +312,38 @@ var app = {
 		this.goBackEvent(card, cards.stationLayerListCard);
 	},
 	layerDataListCard: function(cards, card) {
+		var me = this;
 		var store = Ext.getStore('WERealtime.store.layerData');
 		var list = card.getComponent('layerDataList');
 		list.setStore(store);
-
+		
+		this.goBackEvent(card, cards.stationLayerListCard);
+		
 		card.on('activate', function() {
 			var WEData = this.WEData;
-			//var 
-			//var layerDescription = 
-			//cardTitle = 'Data of' + station_description
-			//card.items.items[0].setTitle(cardTitle);
 			store.load({
 				params : WEData
 			});
 		})
-		card.items.items[0].items.items[0].on('tap', function() {
-			cards.setActiveItem(cards.stationLayerListCard, {
-				type : 'slide',
-				direction : 'right'
-			});
-		})
+		
 		list.on('itemtaphold', function(dataView, index, dataItem, record) {
-			if (!dataView.overlay) {
-				dataView.overlay = Ext.create('Ext.Panel', {
-					floating : true,
-					modal : true,
-					hidden : true,
-					height : '80%',
-					width : '80%',
-					html : '',
-					styleHtmlContent : true,
-					scrollable : true,
-					centered : true,
-					items : [ {
-						docked : 'top',
-						xtype : 'toolbar',
-						title : 'Raw text data (' + record.get('text_id') + ')',
-					} ],
-					masked: {
-					    xtype: 'loadmask',
-					    message: 'Loading...'
-					}
-				});
-				Ext.Viewport.add(dataView.overlay);
-			}
-			dataView.overlay.show();
+			var overlay = me.getOverlay();
+			overlay.show();
+			
 			var WEData = card.WEData;
 			Ext.Ajax.request({
 				url : 'index.php',
 				jsonData : {
 					request : 'singleTextdata',
 					text_id : record.get('text_id'),
-					format: 'text',
+					format: 'json',
 				},
 				method : 'POST',
 				callback : function(options, success, response) {
+					var result = Ext.decode(response.responseText);
 					if (success == true) {
-						dataView.overlay.setHtml('<pre>' + response.responseText + '</pre>');
-						dataView.overlay.setMasked(false);
+						overlay.setHtml('<pre>' + result.Text + '</pre>');
+						overlay.setMasked(false);
 					}
 				}
 			})
