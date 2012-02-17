@@ -396,6 +396,7 @@ var app = {
 			var apiText = WEData.get('description');
 			
 			apiTextBox.setValue(apiText);
+			result.setValue('');
 		});
 		
 		send.on('tap', function() {

@@ -38,5 +38,13 @@ Ext.regStore('WERealtime.store.apiMenu', {
 		              	'  format: "json",',
 		              	'}'
 		              ].join('\n')
-	}, ],
+	}, {
+		id : 32,
+		menu : 'Ingesting history',
+		description: [	'{',
+		              	'  request: "ingestingVersionList",',
+		              	'  format: "json",',
+		              	'}'
+		              ].join('\n')
+	} ],
 });
