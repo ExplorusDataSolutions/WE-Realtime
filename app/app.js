@@ -407,7 +407,7 @@ var app = {
 			var height = el.getHeight();
 			var textarea = el.query('textarea')[0];
 			textarea.style.height = height + 'px';
-			alert(height)
+			
 			Ext.Ajax.request({
 				url : 'index.php',
 				jsonData : jsonData,
