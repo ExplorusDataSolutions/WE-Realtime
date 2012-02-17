@@ -15,7 +15,7 @@ $modelLog->debug('get last command');
  * Test scripts
  * @var unknown_type
  */
-if (1) {
+if (0) {
 	$modelTextdata = $controller->getModel('Textdata');
 	
 	
@@ -104,7 +104,7 @@ if (!$cmd || $cmd->isStartIngesting()) {
 	 * 记录上次中断位置
 	 */
 	// 取得 current 状态的 station 列表，以及相对应的 current 状态的 textdata
-	$stations = $modelLog->getUpdatingStations();
+	$stations = $modelLog->getUpdatingStations();pre($stations,1);
 	$last_station = false;
 	foreach ($stations as $i => $station) {
 		// 如果上次没循环完，接着循环

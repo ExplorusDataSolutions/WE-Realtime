@@ -7,6 +7,9 @@ Ext.define("WERealtime.model.Menu", {
 		}, {
 			name : "menu",
 			type : "string"
+		}, {
+			name : "description",
+			type : "string"
 		}, ]
 	}
 });
@@ -21,15 +24,19 @@ Ext.regStore('WERealtime.store.mainMenu', {
 		menu : 'View stations'
 	}, {
 		id : 3,
-		menu : 'Menu 1'
-	}, {
-		id : 4,
-		menu : 'Menu 2'
-	}, {
-		id : 5,
-		menu : 'Menu 3'
-	}, {
-		id : 6,
-		menu : 'More...'
+		menu : 'API calls'
+	}, ],
+});
+
+Ext.regStore('WERealtime.store.apiMenu', {
+	model : 'WERealtime.model.Menu',
+	data : [ {
+		id : 31,
+		menu : 'Stations with full status',
+		description: [	'{',
+		              	'  request: "stationList",',
+		              	'  format: "json",',
+		              	'}'
+		              ].join('\n')
 	}, ],
 });

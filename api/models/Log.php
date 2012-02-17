@@ -159,7 +159,9 @@ class WERealtime_Model_Log extends ML_Model_Table {
 			WHERE
 					s.status = 'current'
 			ORDER BY
-					s.basin_id, s.infotype_id, s.station_strid
+			-- 
+			--		s.basin_id, s.infotype_id, s.station_strid
+					s.
 		";
 	
 		return $this->connect()->fetchAll($sql);

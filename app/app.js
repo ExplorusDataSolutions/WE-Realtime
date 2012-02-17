@@ -2,6 +2,7 @@
 
 var app = {
 	launch : function() {
+		var app = this;
 		var cards = this.cards = Ext.create('Ext.Panel', {
 			layout : 'card',
 			fullscreen : true,
@@ -9,7 +10,7 @@ var app = {
 
 			items : [ viewMainMenu, viewHistoryList, viewStationList,
 					viewStationLayerList, viewTextdataHistoryList,
-					viewLayerDataList ],
+					viewLayerDataList, viewApiList, viewApiDemo ],
 		});
 
 		// some useful references
@@ -19,6 +20,8 @@ var app = {
 		cards.stationLayerListCard = cards.getComponent('stationLayerListCard');
 		cards.textdataHistoryCard = cards.getComponent('textdataHistoryCard');
 		cards.layerDataListCard = cards.getComponent('layerDataListCard');
+		cards.apiListCard = cards.getComponent('apiListCard');
+		cards.apiDemoCard = cards.getComponent('apiDemoCard');
 
 		this.mainMenuCard(cards, cards.mainMenuCard);
 		this.ingestingHistoryCard(cards, cards.ingestingHistoryCard);
@@ -26,9 +29,10 @@ var app = {
 		this.stationLayerListCard(cards, cards.stationLayerListCard);
 		this.textdataHistoryCard(cards, cards.textdataHistoryCard);
 		this.layerDataListCard(cards, cards.layerDataListCard);
-
-		cards.setActiveItem(cards.mainMenuCard);
 	},
+	/**
+	 * Some frequently used methods
+	 */
 	goBackEvent : function(currentCard, activatingCard) {
 		var backButton = currentCard.items.items[0].items.items[0];
 		var cards = this.cards;
@@ -71,21 +75,32 @@ var app = {
 		
 		return this.overlay;
 	},
+	/**
+	 * Cards and their events
+	 */
 	mainMenuCard : function(cards, card) {
 		var me = this;
 		var store = Ext.getStore('WERealtime.store.mainMenu');
 		var list = card.getComponent('mainMenuList');
 		
-		// show main menu
+		// show main menu, and once only
 		list.getStore() || list.setStore(store);
 		
-		list.on('select', function(obj, record) {
+		list.on('itemtap', function(view, index, target, record) {
 			setTimeout(function() {
 				var menuTitle = record.get('menu');
-				if (menuTitle == 'View stations') {
+				// We can add more "if" here to add new screens
+				switch (menuTitle) {
+				case 'View stations':
 					me.goForward(cards.stationListCard);
-				} else if (menuTitle == 'Ingesting history') {
+					break;
+				case 'Ingesting history':
 					me.goForward(cards.ingestingHistoryCard);
+					break;
+				case 'API calls':
+					me.initApiListCard(cards, cards.apiListCard);
+					me.goForward(cards.apiListCard);
+					break
 				}
 			}, 100);
 		});
@@ -345,6 +360,60 @@ var app = {
 						overlay.setHtml('<pre>' + result.Text + '</pre>');
 						overlay.setMasked(false);
 					}
+				}
+			})
+		})
+	},
+	initApiListCard : function(cards, card) {
+		var me = this;
+		var store = Ext.getStore('WERealtime.store.apiMenu');
+		var list = card.getComponent('apiList');
+		var back = card.items.items[0].items.items[0];
+		
+		this.goBackEvent(card, cards.mainMenuCard);
+		
+		card.on('activate', function() {
+			list.getStore() || list.setStore(store);
+		});
+		
+		list.on('itemtap', function(view, index, target, record) {
+			cards.apiDemoCard.WEData = record;
+			me.goForward(cards.apiDemoCard);
+		});
+		
+		this.initApiDemoCard(cards, cards.apiDemoCard);
+	},
+	initApiDemoCard: function(cards, card) {
+		var me = this;
+		var apiTextBox = card.items.items[1];
+		var send = card.items.items[0].items.items[2];
+		var result = card.items.items[2];
+		
+		this.goBackEvent(card, cards.apiListCard);
+		
+		card.on('activate', function() {
+			var WEData = card.WEData;
+			var apiText = WEData.get('description');
+			
+			apiTextBox.setValue(apiText);
+		});
+		
+		send.on('tap', function() {
+			var WEData = card.WEData;
+			var apiText = WEData.get('description');
+			var jsonData = Ext.decode(apiText);
+			
+			var el = result.getEl();
+			var height = el.getHeight();
+			var textarea = el.query('textarea')[0];
+			textarea.style.height = height + 'px';
+			alert(height)
+			Ext.Ajax.request({
+				url : 'index.php',
+				jsonData : jsonData,
+				method : 'POST',
+				success : function(response, opts) {
+					result.setValue(response.responseText);
 				}
 			})
 		})
