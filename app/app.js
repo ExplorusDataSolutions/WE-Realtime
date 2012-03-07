@@ -10,12 +10,13 @@ var app = {
 
 			items : [ viewMainMenu, viewHistoryList, viewStationList,
 					viewStationLayerList, viewTextdataHistoryList,
-					viewLayerDataList, viewApiList, viewApiDemo ],
+					viewLayerDataList, viewApiList, viewApiDemo, viewBasinDatatype ],
 		});
 
 		// some useful references
 		cards.mainMenuCard = cards.getComponent('mainMenuCard');
 		cards.ingestingHistoryCard = cards.getComponent('ingestingHistoryCard');
+		cards.basinDataTypeCard = cards.getComponent('basinDataTypeCard');
 		cards.stationListCard = cards.getComponent('stationListCard');
 		cards.stationLayerListCard = cards.getComponent('stationLayerListCard');
 		cards.textdataHistoryCard = cards.getComponent('textdataHistoryCard');
@@ -25,6 +26,7 @@ var app = {
 
 		this.mainMenuCard(cards, cards.mainMenuCard);
 		this.ingestingHistoryCard(cards, cards.ingestingHistoryCard);
+		this.basinDataTypeCard(cards, cards.basinDataTypeCard);
 		this.stationListCard(cards, cards.stationListCard);
 		this.stationLayerListCard(cards, cards.stationLayerListCard);
 		this.textdataHistoryCard(cards, cards.textdataHistoryCard);
@@ -91,15 +93,22 @@ var app = {
 				var menuTitle = record.get('menu');
 				// We can add more "if" here to add new screens
 				switch (menuTitle) {
+				case 'API calls':
+					me.initApiListCard(cards, cards.apiListCard);
+					me.goForward(cards.apiListCard);
+					break;
+				case 'View basins and data types':
+					me.goForward(cards.basinDataTypeCard);
+					break;
 				case 'View stations':
 					me.goForward(cards.stationListCard);
 					break;
 				case 'Ingesting history':
 					me.goForward(cards.ingestingHistoryCard);
 					break;
-				case 'API calls':
-					me.initApiListCard(cards, cards.apiListCard);
-					me.goForward(cards.apiListCard);
+				case 'Check stations updates':
+					//me.initApiListCard(cards, cards.apiListCard);
+					//me.goForward(cards.apiListCard);
 					break
 				}
 			}, 100);
@@ -108,11 +117,43 @@ var app = {
 	ingestingHistoryCard : function(cards, card) {
 		var store = Ext.getStore('WERealtime.store.ingestingHistory');
 		var list = card.getComponent('historyList');
+		var btn = card.items.items[2].items.items[1];
 		list.setStore(store);
 		
 		card.on('activate', function() {
-			store.load();
+			store.load(function(records) {
+				var last_record;
+				if (records.length) {
+					last_record = records[0];
+				}
+				
+				if (last_record && last_record.get('end_time') == '') {
+					btn.setHtml('Stop current ingesting');
+				} else {
+					btn.setHtml('Start new ingesting');
+				}
+			});
 		})
+		
+		btn.on('tap', function() {
+			var last_version = store.getAt(0);
+			
+			if (last_version && last_version.get('end_time') == '') {
+				Ext.Ajax.request({
+					url: 'index.php',
+					method: 'POST',
+					jsonData: {
+						request: 'stopCurrentIngesting',
+						version: last_version.get('version'),
+						format: 'json',
+					},
+					success: function(response, options) {
+						alert(response.responseText)
+					}
+				});
+			}
+		});
+		
 		this.goBackEvent(card, cards.mainMenuCard);
 	},
 	/*
@@ -231,10 +272,43 @@ var app = {
 	textdataHistoryCard : function(cards, card) {
 		var me = this;
 		var store = Ext.getStore('WERealtime.store.textdataHistory');
-		var select = card.items.items[2].getComponent('textdataSelect');
+		var select = card.items.items[3].getComponent('textdataSelect');
 		var dataPanel = card.items.items[1];
+		var parseCurrent = card.items.items[2].items.items[1];
+		var parseAll = card.items.items[2].items.items[2];
 		
 		//var baseUrl = 'http://www.environment.alberta.ca/apps/basins/DisplayData.aspx';
+		var loadVersionList = function(WEData) {
+			select.disable();
+			store.load({
+				params : WEData,
+				callback : function(records) {
+					var options = [{
+						text: WEData.station_strid + ' - Real time data',
+						value: 0,
+					}];
+					for ( var i = records.length, record; record = records[--i];) {
+						var ingest_time = record.get('ingest_time');
+						var time_stamp = Ext.Date.parse(ingest_time,
+								"Y-m-d H:i:s");
+						var dt = Ext.Date.format(time_stamp,
+								"M d, Y H:i:s");
+						options.push({
+							text : WEData.station_strid + ' - '
+									+ record.get('version') + ' - '
+									+ record.get('id') + ' - '
+									+ record.get('new_records') + '/'
+									+ record.get('all_records'),
+							value : record.get('id'),
+						});
+					}
+					select.suspendEvents();
+					select.setOptions(options);
+					select.resumeEvents();
+					select.enable();
+				}
+			});
+		}
 		var loadTextData = function(text_id) {
 			var WEData = card.WEData;
 			dataPanel.setHtml('');
@@ -287,31 +361,7 @@ var app = {
 			/*
 			 * Version history
 			 */
-			store.load({
-				params : WEData,
-				callback : function(records) {
-					var options = [{
-						text: 'Current',
-						value: 0,
-					}];
-					for ( var i = records.length, record; record = records[--i];) {
-						var ingest_time = record.get('ingest_time');
-						var time_stamp = Ext.Date.parse(ingest_time,
-								"Y-m-d H:i:s");
-						var dt = Ext.Date.format(time_stamp,
-								"M d, Y H:i:s");
-						options.push({
-							text : record.get('version') + ' - '
-									+ record.get('new_records') + ' - '
-									+ dt,
-							value : record.get('id'),
-						});
-					}
-					select.suspendEvents();
-					select.setOptions(options);
-					select.resumeEvents();
-				}
-			});
+			loadVersionList(WEData);
 		}
 		var reloadButton = card.items.items[0].items.items[2];
 		reloadButton.on('tap', function() {
@@ -325,6 +375,52 @@ var app = {
 		})
 		
 		this.goBackEvent(card, cards.stationLayerListCard);
+		
+		parseCurrent.on('tap', function() {
+			var WEData = card.WEData;
+			
+			Ext.Ajax.request({
+				url : 'index.php',
+				method : 'POST',
+				jsonData : {
+					request : 'parseTextdata',
+					text_id : select.getValue(),
+					station_strid : WEData.station_strid,
+					format : 'json',
+				},
+				success : function(response, options) {
+					var result = Ext.decode(response.responseText);
+					var message = Ext.String.format(
+							'{0} records parsed, {1} records updated',
+							result.AllRecords, result.NewRecords
+						);
+					alert(message);
+					loadVersionList(WEData);
+				}
+			})
+		})
+		
+		parseAll.on('tap', function() {
+			var WEData = card.WEData;
+			
+			Ext.Ajax.request({
+				url : 'index.php',
+				method : 'POST',
+				jsonData : {
+					request : 'parseTextdataHistory',
+					basin_id : WEData.basin_id,
+					datatype_id : WEData.datatype_id,
+					station_strid : WEData.station_strid,
+					format : 'json',
+				},
+				success : function(response, options) {
+					var result = Ext.decode(response.responseText);
+					var message = Ext.String.format('{0} versions parsed', result.Versions);
+					alert(message);
+					loadVersionList(WEData);
+				}
+			})
+		})
 	},
 	layerDataListCard: function(cards, card) {
 		var me = this;
@@ -417,6 +513,287 @@ var app = {
 					result.setValue(response.responseText);
 				}
 			})
+		})
+	},
+	basinDataTypeCard: function(cards, card) {
+		var me = this;
+		var carousels = card.items.items[1];
+		var basinList = card.items.items[1].items.items[1];
+		var basinListStore = Ext.getStore('WERealtime.store.basinList');
+		var dataTypeList = card.items.items[1].items.items[2];
+		var dataTypeListStore = Ext.getStore('WERealtime.store.datatypeList');
+		var stationList = card.items.items[1].items.items[3];
+		var stationListStore = Ext.getStore('WERealtime.store.stationList2');
+		var selectedBasinId, selectedDatatypeId;
+		var indexBar = stationList.getIndexBar();
+		
+		var select = card.items.items[2].items.items[1];
+		var btnViewPage = card.items.items[2].items.items[3];
+		
+		var backButton = card.items.items[0].items.items[0];
+		backButton.on('tap', function() {
+			if (carousels.getActiveItem().id == 'basinList') {
+				cards.setActiveItem(cards.mainMenuCard, {
+					type : 'slide',
+					direction : 'right'
+				});
+			} else {
+				carousels.previous();
+			}
+		});
+		var checkButton = card.items.items[0].items.items[2];
+		checkButton.on('tap', function() {
+			if (carousels.getActiveItem().id == 'basinList') {
+				Ext.Ajax.request({
+					url : 'index.php',
+					jsonData : {
+						request : 'checkBasinList',
+						format : 'json',
+					},
+					method : 'POST',
+					success : function(response) {
+						var result = Ext.decode(response.responseText);
+						
+						basinListStore.each(function(record, index, total) {
+							record.set('Status', 'deleted');
+						});
+						
+						if (Ext.isArray(result)) {
+							var newRecords = [];
+							for (var i = 0, len = result.length; i < len; i++) {
+								var record = basinListStore.getById(result[i].id);
+								if (record) {
+									var old_desc = record.get('Description');
+									var new_desc = result[i].name;
+									var status = new_desc == old_desc ? 'same' : 'changed';
+									record.set('Description', new_desc);
+									record.set('Status', status);
+								} else {
+									newRecords.push({
+										Id : result[i].id,
+										Description : result[i].name,
+										Status : 'new',
+									});
+								}
+							}
+							
+							basinListStore.suspendEvents();
+							var reader = basinListStore.getProxy().getReader();
+							var Model = basinListStore.getModel();
+							var records = reader.extractData(newRecords);
+							for ( var i = 0, record; record = records[i]; i++) {
+								records[i] = new Model(record.data, record.id, record.node);
+							}
+							basinListStore.add(records);
+							basinListStore.resumeEvents();
+						}
+						
+						basinList.refresh();
+					}
+				});
+			} else if (carousels.getActiveItem().id == 'dataTypeList') {
+				Ext.Ajax.request({
+					url : 'index.php',
+					jsonData : {
+						request : 'checkDatatypeList',
+						format : 'json',
+					},
+					method : 'POST',
+					timeout : 1000 * 1000,
+					success : function(response) {
+						var result = Ext.decode(response.responseText);
+						
+						dataTypeListStore.each(function(record, index, total) {
+							record.set('Status', 'deleted');
+						});
+						
+						if (Ext.isArray(result)) {
+							var newRecords = [];
+							for (var i = 0, len = result.length; i < len; i++) {
+								var record = dataTypeListStore.getById(result[i].id);
+								if (record) {
+									var old_desc = record.get('Description');
+									var new_desc = result[i].name;
+									var old_basins = record.get('Basins');
+									var new_basins = result[i].basins;
+									new_basins.sort(function(a, b) {return a - b});
+									new_basins = new_basins.join(', ');
+									if (new_desc != old_desc) {
+										record.set('oldDescription', old_desc);
+									}
+									var status = new_desc == old_desc && old_basins == new_basins ? 'same' : 'changed';
+									record.set('Description', new_desc);
+									record.set('Status', status);
+								} else {
+									newRecords.push({
+										Id : result[i].id,
+										Description : result[i].name,
+										Status : 'new',
+									});
+								}
+							}
+							
+							dataTypeListStore.suspendEvents();
+							var reader = dataTypeListStore.getProxy().getReader();
+							var Model = dataTypeListStore.getModel();
+							var records = reader.extractData(newRecords);
+							for ( var i = 0, record; record = records[i]; i++) {
+								records[i] = new Model(record.data, record.id, record.node);
+							}
+							dataTypeListStore.add(records);
+							dataTypeListStore.resumeEvents();
+						}
+						
+						dataTypeList.refresh();
+					}
+				});
+			} else if (carousels.getActiveItem().id == 'stationList2') {
+				basinListStore.sort('id');
+				dataTypeListStore.sort('id');
+				basinListStore.each(function(record) {
+					var basin_id = record.get('id');
+					dataTypeListStore.each(function(record) {
+						var datatype_id = record.get('id');
+						if (record.raw.Basins[basin_id]) {
+							stationListStore.checkUpdates(basin_id, datatype_id, function() {
+								stationList.refresh();
+								var group, groups = stationListStore.getGroups();
+								var groupName = basin_id + '.' + datatype_id;
+								var status, info = {total:0};
+								for (var i = 0, len = groups.length; i < len; i++) {
+									group = groups[i];
+									if (group.name == groupName) {
+										for (var j = 0, len2 = group.children.length; j < len2; j++) {
+											status = group.children[j].get('Status');
+											info[status] = info[status] ? info[status] + 1 : 1;
+											status != 'deleted' && info.total++;
+										}
+										var letters = indexBar.getLetters();
+										for (var j = 0, len2 = letters.length; j < len2; j++) {
+											if (letters[j].indexOf(basin_id + '.' + datatype_id) == 0) {
+												letters[j] = group.name
+													+ ' (' + info.total + ' '
+													+ (info['new'] ? '+' + info['new'] : '')
+													+ (info['deleted'] ? '-' + info.deleted : '')
+													+ (info['changed'] ? '*' + info.changed : '')
+													+ ')';
+												break;
+											}
+										}
+										indexBar.setLetters([]);
+										indexBar.setLetters(letters);
+										break;
+									}
+								}
+							});
+							//return false;
+						}
+					});
+					return false;
+				});
+			}
+		});
+		
+		var loadVersionList = function() {
+			select.disable();
+			Ext.Ajax.request({
+				url : 'index.php',
+				jsonData : {
+					request : 'basinVersionList',
+					format : 'json',
+				},
+				success : function(response, options) {
+					var result = Ext.decode(response.responseText);
+					
+					var options = [];
+					for ( var i = result.length, row; row = result[--i];) {
+						var time_stamp = Ext.Date.parse(row.update_time,
+								"Y-m-d H:i:s");
+						var dt = Ext.Date.format(time_stamp,
+								"M d, Y");
+						options.push({
+							text : 'Version: ' + row.version + ' - ' + dt,
+							value : row.version,
+						});
+					}
+					select.suspendEvents();
+					select.setOptions(options);
+					select.resumeEvents();
+					select.enable();
+				}
+			});
+		}
+		card.on('activate', function() {
+			basinList.getStore() || basinList.setStore(basinListStore);
+			basinListStore.load();
+			
+			dataTypeList.getStore() || dataTypeList.setStore(dataTypeListStore);
+			dataTypeListStore.load();
+			
+			stationList.getStore() || stationList.setStore(stationListStore);
+			stationListStore.load(function(records, operation, success) {
+				var groups = stationListStore.getGroups();
+				var letters = [];
+				var len1 = 0, len2 = 0, n1, n2;
+				/*for (var i = 0, len = groups.length; i < len; i++) {
+					n1 = groups[i].name;
+					n2 = groups[i].children.length.toString();
+					len1 = Math.max(len1, n1.length);
+					len2 = Math.max(len2, n2.length);
+				}*/
+				for (var i = 0, len = groups.length; i < len; i++) {
+					n1 = groups[i].name;
+					//n1 = n1 + Ext.String.repeat('&nbsp;', len1 - n1.length + 1);
+					n2 = ' (' + groups[i].children.length.toString() + ')';
+					//n2 = n2 + Ext.String.repeat('&nbsp;', len2 - n2.length);
+					letters.push(n1 + n2);
+				}
+				indexBar.setLetters(letters);
+			});
+			
+			loadVersionList();
+		});
+		
+		basinList.on('itemtap', function(view, index, target, record) {
+			selectedBasinId = record.get('id');
+			dataTypeListStore.clearFilter();
+			dataTypeListStore.filter(function(item) {
+				return (', ' + item.get('Basins')　+ ', ').indexOf(', ' + selectedBasinId + ', ') != -1;
+			})
+			carousels.next();
+		});
+		
+		dataTypeList.on('itemtap', function(view, index, target, record) {
+			if (!selectedBasinId) {
+				return false;
+			}
+			selectedDatatypeId = record.get('id');
+			stationListStore.clearFilter();
+			stationListStore.filter(function(item) {
+				return item.get('BasinId') == selectedBasinId
+					&& item.get('DatatypeId') == selectedDatatypeId;
+			})
+			carousels.next();
+		});
+		
+		var stationsBaseUrl = 'http://www.environment.alberta.ca/apps/basins/Map.aspx';
+		btnViewPage.on('tap', function() {
+			if (selectedBasinId && selectedDatatypeId) {
+				window.open(stationsBaseUrl + '?Basin=' + selectedBasinId + '&DataType=' + selectedDatatypeId);
+			} else {
+				alert('Please specify both a Basin and a Datatype first')
+			}
+		});
+		/*carousels.on('activate', function(container, item, toIndex, fromIndex, eOpts) {
+			alert(toIndex+','+fromIndex)
+		})*/
+		
+		select.on('change', function(select, newValue, oldValue) {
+			basinListStore.load({
+				params: {
+					version: newValue.get('value')
+				}
+			});
 		})
 	}
 }

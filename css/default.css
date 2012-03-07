@@ -8,3 +8,16 @@ span.we-h2 {
 	font-size: 12px;
 	color: gray
 }
+
+span.we-new {
+	text-decoration : underline;
+}
+
+span.we-deleted {
+	text-decoration : line-through;
+	color: silver
+}
+
+.x-indexbar > div {
+	text-align: left;
+}

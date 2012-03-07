@@ -42,6 +42,9 @@ class WERealtime_Model_Log extends ML_Model_Table {
 	public function isStopIngesting() {
 		return $this->Name == 'stop ingesting' && $this->Value == 1;
 	}
+	public function stopIngesting($serial = 0) {
+		return $this->updateIngestLog('stop ingesting', 1, $serial);
+	}
 	
 	public function getIngestLog($name = '') {
 		if ($name) {
@@ -125,9 +128,13 @@ class WERealtime_Model_Log extends ML_Model_Table {
 			";
 		}
 		$this->connect()->query($sql);
+		
+		return $this->connect()->affectedRows(); 
 	}
 	public function debug($message) {
-		
+		echo @date("Y-m-d H:i:s ")
+			. preg_replace('/.*\./', '.', sprintf("%.4f", round(microtime(true), 4)))
+			. " - $message<br />";
 	}
 	
 	function getUpdatingStations() {
@@ -140,9 +147,11 @@ class WERealtime_Model_Log extends ML_Model_Table {
 					, t.version			AS text_version
 					, t.records_num		-- Stations Details page use
 					, t.inserted_num
+					, t.text_id
 			FROM	station	AS s
 			LEFT JOIN (	-- 先选出来再 left join 效率会高很多
-				SELECT	t.basin_id
+				SELECT	t.id text_id
+						, t.basin_id
 						, t.infotype_id
 						, t.station_strid
 						, t.version
@@ -159,12 +168,71 @@ class WERealtime_Model_Log extends ML_Model_Table {
 			WHERE
 					s.status = 'current'
 			ORDER BY
-			-- 
 			--		s.basin_id, s.infotype_id, s.station_strid
-					s.
+					s.station_strid, s.infotype_id, s.basin_id
 		";
-	
+		
 		return $this->connect()->fetchAll($sql);
+	}
+	
+	public function getLastSerial() {
+		$sql = "
+			SELECT	a.version
+					, b.serial
+					, b.name
+					, b.value
+					, b.time
+			FROM	(
+				SELECT	value AS version	-- 1 ingesting version can be finished by many times(1 time is called 1 serial)
+						, MAX(serial) serial
+				FROM	`" . $this->getTable() . "`
+				WHERE	name = 'start ingesting'
+				GROUP BY
+				 		value			-- this can make only show the first serial
+				ORDER BY
+				 		0+value DESC	-- convert from string to number
+				LIMIT 1
+			) AS a
+			JOIN	`" . $this->getTable() . "` AS b
+				ON	a.serial = b.serial	-- get other information of this serial
+			ORDER BY
+				b.serial DESC
+		";
+		$rows = $this->connect()->fetchAll($sql);
+		
+		$logs = array();
+		$list = array();
+		foreach ( $rows as $row ) {
+			$v = $row ['version'];
+			$s = $row ['serial'];
+			if (empty ( $logs [$v] [$s] )) {
+				$logs [$v] [$s] = array ();
+				$list [] = &$logs [$v] [$s];
+			}
+			$n = $row ['name'];
+			switch ($n) {
+				case 'start ingesting' :
+					$logs [$v] [$s] ['version'] = intval ( $row ['value'] );
+					$logs [$v] [$s] ['start_time'] = $row ['time'];
+					break;
+				case 'finish ingesting' :
+					$logs [$v] [$s] ['total'] = intval ( $row ['value'] );
+					$logs [$v] [$s] ['end_time'] = $row ['time'];
+					break;
+				case 'current ingesting' :
+					$logs [$v] [$s] ['final_status'] = $row ['value'];
+					$logs [$v] [$s] ['status_time'] = $row ['time'];
+					break;
+				case 'stop ingesting' :
+					$logs [$v] [$s] ['stop'] = $row ['value'];
+					$logs [$v] [$s] ['stop_time'] = $row ['time'];
+					break;
+				default :
+					$logs [$v] [$s] [$n] = $row ['value'];
+					$logs [$v] [$s] [$n . '_time'] = $row ['time'];
+			}
+		}
+		return array_pop($list);
 	}
 	
 	public function getVersionList($start = 0, $limit = 25) {

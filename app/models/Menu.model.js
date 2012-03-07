@@ -18,14 +18,17 @@ Ext.regStore('WERealtime.store.mainMenu', {
 	model : 'WERealtime.model.Menu',
 	data : [ {
 		id : 1,
-		menu : 'Ingesting history'
+		menu : 'API calls'
 	}, {
 		id : 2,
-		menu : 'View stations'
+		menu : 'View basins and data types'
 	}, {
 		id : 3,
-		menu : 'API calls'
-	}, ],
+		menu : 'View stations'
+	}, {
+		id : 4,
+		menu : 'Ingesting history'
+	} ],
 });
 
 Ext.regStore('WERealtime.store.apiMenu', {

@@ -446,7 +446,7 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 		$infotype_id = intval($infotype_id);
 		$station_strid = preg_replace('/[^0-9a-zA-Z]/', '', $station_strid);
 	
-		$tbname = 'basin_'.$basin_id.'_datatype_'.$infotype_id.'_'.strtolower($station_strid);
+		$tbname = strtolower($station_strid);
 	
 		$sql = "SHOW TABLES LIKE '$tbname'";
 		$tableList = $this->connect('realtime-data')->fetchAll($sql);

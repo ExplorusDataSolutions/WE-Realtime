@@ -102,7 +102,7 @@ class MySQL {
 		mysql_close($this->link);
 	}
 	
-	function affected_rows() {
+	function affectedRows() {
 		return mysql_affected_rows($this->link);
 	}
 	

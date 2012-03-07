@@ -36,7 +36,7 @@ if (!empty($_POST['data'])) {
 			<textarea name="data" rows="10" cols="80"><?php echo $data?></textarea><br />
 			<input type="submit" value="Submit" />
 		</form>
-		<pre><?php echo $response?></pre>
+		<textarea cols="120" rows="25"><?php echo htmlspecialchars($response)?></textarea>
 	</div>
 	<div id="footer"></div>
 </body>

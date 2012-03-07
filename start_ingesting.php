@@ -8,8 +8,7 @@ $controller = new WERealtimeAPIController();
 $modelLog = $controller->getModel('Log');
 
 // 取得最后一次的命令
-$cmd = $modelLog->getLastCommand();
-$modelLog->debug('get last command');
+$lastSerialInfo = $modelLog->getLastSerial();
 
 /**
  * Test scripts
@@ -92,21 +91,19 @@ if (0) {
 
 $output = '';
 // 如果最后一次命令是 开始抓取
-if (!$cmd || $cmd->isStartIngesting()) {
+if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 	// 取得 current 状态的最新版本
 	$modelTextdata = $controller->getModel('Textdata');
 	$updatingVersion = $modelTextdata->getUpdatingVersion();
 	
 	$serial = $modelLog->addIngestLog('start ingesting', $updatingVersion);
-	$modelLog->debug('取得最新版本:' . $updatingVersion);
+	$modelLog->debug("start: version $updatingVersion, serial: $serial");
 	
-	/**
-	 * 记录上次中断位置
-	 */
+	
 	// 取得 current 状态的 station 列表，以及相对应的 current 状态的 textdata
-	$stations = $modelLog->getUpdatingStations();pre($stations,1);
-	$last_station = false;
-	foreach ($stations as $i => $station) {
+	$stations = $modelLog->getUpdatingStations();
+	/*$last_station = false;
+	foreach ($stations as $i => $station) {pre(array($station['text_version'], $updatingVersion));
 		// 如果上次没循环完，接着循环
 		if ($station['text_version'] == $updatingVersion) {
 			$last_station = $station;
@@ -114,7 +111,9 @@ if (!$cmd || $cmd->isStartIngesting()) {
 			break;
 		}
 	}
+	pre($last_station,1);
 	if ($last_station) {
+		$modelLog->debug("last unfinished station: $last_station[station_strid], $last_station[infotype_id]");pre('xx',1);
 		$lastIngestLog = $modelLog->getIngestLog('last ingesting');
 		if ($lastIngestLog && $lastIngestLog->Serial < $serial) {
 			$modelLog->updateIngestLog(
@@ -123,24 +122,22 @@ if (!$cmd || $cmd->isStartIngesting()) {
 				$serial
 			);
 		}
-	}
-	$modelLog->debug('上次最后的 station:' . $last_station['station_strid']);
+	}*/
 	
 	$counter = 0;
 	while (true) {
-		$cmd = $modelLog->getLastCommand();
-		if ($cmd && $cmd->isStopIngesting()) {
-			$output = "Ingesting is stopped by command, at $cmd->Time";
+		$lastSerialInfo = $modelLog->getLastSerial();
+		if ($lastSerialInfo && !empty($lastSerialInfo['stop'])) {
+			$output = "Ingesting is stopped by command, at $lastSerialInfo[stop_time]";
 			break;
 		}
 		
-		// 取得最 'current' 版的 station 列表
 		$stations = $modelLog->getUpdatingStations();
-		$modelLog->debug('标记为 current 的 station 数: ' . count($stations));
 		
 		$current_station = '';
 		foreach ($stations as $i => $station) {
-			if ($station['text_version'] < $updatingVersion) {
+			// case 1: an existing text_id with 'non-current' status leads to empty text_version
+			if (empty($station['text_version']) || $station['text_version'] < $updatingVersion) {
 				$current_station = $station;
 				break;
 			}
@@ -157,81 +154,73 @@ if (!$cmd || $cmd->isStartIngesting()) {
 			$station_version	= $station['station_version'];
 			$station_descriptor = $station['station_descriptor'];
 			
-			$modelLog->debug("本次循环 current station:$basin_id, $infotype_id, $station_strid");
-			
-			// 如果 $station['text_version'] 记录的 'current' 不是最新
-			if ($station['text_version'] && $station['text_version'] != $updatingVersion) {
-				// 去除 current 状态
-				$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $station['text_version'], '');
-				$modelLog->debug('current 不是最新，取消 current 标识');
-			}
-			
-			$current_textdata = $modelTextdata->getTextdataByVersion($basin_id, $infotype_id, $station_strid, $updatingVersion);
-			// 如果当前版本已存在
-			if ($current_textdata) {
+			$currentTextdata = $modelTextdata->getTextdataByVersion($basin_id, $infotype_id, $station_strid, $updatingVersion);
+			// if the textdata of current version exists
+			if ($currentTextdata) {
+				$modelLog->debug("Existing textdata: $station_strid, $basin_id, $infotype_id, version: $updatingVersion");
 				// 把当前记录更新为 'current' 状态
-				$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $current_textdata['version'], 'current');
-				$modelLog->debug('当前' . $current_textdata['version'] . '版本已存在，更新为 current 状态');
-				continue;
-			}
-			
-			// 记录当前正在抓取的 station
-			$modelLog->updateIngestLog(
-				'current ingesting',
-				"basin:$basin_id, infotype: $infotype_id, station: $station_strid",
-				$serial
-			);
-			
-			$modelLog->debug('抓取前');
-			// 抓取内容
-			$ref_station_code = '';
-			$textdata = $modelTextdata->ingestTextdata(
+				$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $currentTextdata->Version, 'current');
+				
+				$textdata = $currentTextdata->Text;
+			} else {
+				// 记录当前正在抓取的 station
+				$modelLog->updateIngestLog(
+					'current ingesting',
+					"station: $station_strid, datatype: $infotype_id, basin: $basin_id, progress: $counter/" . count($stations),
+					$serial
+				);
+				
+				$modelLog->debug("start ingesting... $station_strid, $infotype_id, $basin_id");
+				
+				$url = $modelTextdata->ingestUrl($basin_id, $infotype_id, $station_strid);
+				$modelLog->debug($url);
+				
+				$textdata = $modelTextdata->ingestTextdata($url);
+				$modelLog->debug('ok. Textdata size: ' . strlen($textdata));
+				
+				$error = '';
+				if ($textdata) {
+					/**
+					 * some characters that may cause MySQL inserting error
+					 */
+					if (strpos($textdata, "\xC0\xE5\x12") !== false) {
+						$textdata = str_replace("\xC0\xE5\x12", '\xC0\xE5\x12', $textdata);
+						$error = '\xC0\xE5\x12';
+					}
+				}
+				
+				// 保存抓取内容
+				$text_id = $modelTextdata->updateTextdataContent(
 					$basin_id,
 					$infotype_id,
 					$station_strid,
-					$station_descriptor,
-					$ref_station_code
-			);
-			$modelLog->debug('抓取后');
-			
-			/**
-			 * 处理可能导致插入数据库出错的内容
-			 */
-			if (strpos($textdata, "\xC0\xE5\x12") !== false) {
-				$textdata = str_replace("\xC0\xE5\x12", '######', $textdata);
-				$error = '######';
-			} else {
-				$error = '';
+					$station_version,
+					$textdata,
+					$error,
+					$updatingVersion
+				);
+				$modelLog->debug("Textdata $text_id saved");
+				
+				if ($text_id && $station['text_version'] && $station['text_version'] != $updatingVersion) {
+					$modelLog->debug("Old textdata $station[text_id] current status cleared");
+					// clear old textdata 'current' status
+					$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $station['text_version'], '');
+				}
 			}
 			
-			$result = $modelTextdata->parseContent(
-				$textdata,
-				$ref_station_code ? $ref_station_code : $station_strid
-			);
-			$modelLog->debug('匹配完毕');
-			//if($station_strid=='RLSMOGUY')pre($result,1);
-			
-			// 保存抓取内容
-			$text_id = $modelTextdata->updateTextdataContent(
-				$basin_id,
-				$infotype_id,
-				$station_strid,
-				$station_version,
-				$textdata,
-				$error,
-				$updatingVersion
-			);
-			$modelLog->debug('保存抓取内容完毕');
-			
-			// 保存分析后的所有数据，包括列信息
-			$modelTextdata->updateTextdataData($text_id, $basin_id, $infotype_id, $station_strid, $result);
-			
-			// 从保存后的表中统计 field 的起始／结束时间
-			$modelTextdata->updateTextdataLayerInfo($basin_id, $infotype_id, $station_strid);
-			$modelLog->debug('保存分析所得数据完毕');
+			// ignore empty data
+			if ($textdata) {
+				$result = $modelTextdata->parseContent($textdata);
+				$modelLog->debug('Textdata parsed');
+				
+				// save useful information
+				$modelTextdata->updateTextdataData($text_id, $basin_id, $infotype_id, $station_strid, $result);
+				$modelTextdata->updateTextdataLayerInfo($basin_id, $infotype_id, $station_strid);
+				$modelLog->debug('Statistic data saved');
+			}
 			
 			$counter++;
-			$modelLog->debug('一次抓取完毕:' . $text_id);
+			$modelLog->debug("Textdata $text_id ingesting finish");pre($counter,1);
 		}
 	}
 	// 记录结束抓取
@@ -240,7 +229,7 @@ if (!$cmd || $cmd->isStartIngesting()) {
 	$ingest			= $modelLog->getIngestLog();
 	$start_ingest	= $modelLog->getIngestLog('start ingesting');
 	$finish_ingest	= $modelLog->getIngestLog('finish ingesting');
-	
+	pre($ingest);
 	if ($ingest->Name == 'current ingesting') {
 		$output = "The No. $ingest->Serial Ingesting hangs,"
 			. " starts from $start_ingest->Time,"
@@ -255,7 +244,7 @@ if (!$cmd || $cmd->isStartIngesting()) {
 } else {
 	$output = "Ingesting is disabled by command, at $cmd->Time";
 }
-
+pre($output,1);
 if (EMAIL_REPORT_TO) {
 	$success = mail(EMAIL_REPORT_TO, 'Realtime Data Ingesting Tool Report', $output);
 	echo 'Email "Realtime Data Ingesting Tool Report" sent ' . ($success ? 'success' : 'failure') . '<br />';

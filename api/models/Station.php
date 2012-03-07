@@ -12,16 +12,19 @@ class WERealtime_Model_Station extends ML_Model_Table {
 	}
 	
 	protected $properties = array (
-			'Id' => 'layerid',
-			'Abbrev' =>	'field',
-			'Description' => 'description',
-			'OriginTextId' => 'text_id',
+			'Id' => 'station_strid',
+			'Description' => 'descriptor',
+			'BasinId' => 'basin_id',
+			'DatatypeId' => 'infotype_id',
 	);
 	public function getTable() {
 		return 'station';
 	}
 	public function getDatabase() {
 		return 'realtime-tool';
+	}
+	public function getDatatypeTable() {
+		return 'datatype';
 	}
 	
 	
@@ -48,26 +51,21 @@ class WERealtime_Model_Station extends ML_Model_Table {
 		return $this->connect('realtime-tool')->fetchAll($sql);
 	}
 	function getStationList() {
-		$sql = "
-			SELECT	s.id
-					, s.station_strid AS strid
-					, s.descriptor AS description
-					, '' AS code
-			FROM	`" . $this->getTable() . "` AS s
-			WHERE	s.status = 'current'
-			GROUP BY
-					s.station_strid	-- 669 strid with 1023 station
-			ORDER BY
-					description
-		";
+		$options = array(
+			'WHERE' => "status = 'current'",
+			'ORDERBY' => $this->getPropertyField('Description'),
+		);
 		
-		$rows = $this->connect()->fetchAll($sql);
+		$objs = $this->getRecordList($options);
 		
-		foreach ($rows as $i => &$row) {
-			$row['id'] = intval($row['id']);
+		foreach ($objs as $obj) {
+			$obj->BasinId = intval($obj->BasinId);
+			$obj->DatatypeId = intval($obj->DatatypeId);
+			// Id2
+			$obj->Id2 = $obj->Id . "_" . $obj->BasinId . "_" . $obj->DatatypeId;
 		}
 		
-		return $rows;
+		return $objs;
 	}
 	function getListByBasinInfotypeId($basin_id, $infotype_id) {
 		$basin_id = intval($basin_id);
@@ -563,6 +561,141 @@ class WERealtime_Model_Station extends ML_Model_Table {
 		}
 		
 		return 'station_realtime';
+	}
+	
+	function fetchHtml($url) {
+		$info = array($url);
+	
+		$ch = curl_init($url);
+		$info[] = $ch;
+	
+		curl_setopt($ch, CURLOPT_HEADER, 0);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+	
+		$html = curl_exec($ch);
+		curl_close($ch);
+		$info[] = $html;
+	
+		if ($html) {
+			return $html;
+		} else {
+			return false;
+		}
+	}
+	function matchSelectHtml($html) {
+		if (preg_match_all('/<select .*?<\/select>/is', $html, $m)) {
+			$match = $m[0][0];
+			return $match;
+		} else {
+			return false;
+		}
+	}
+	function matchBasinList($match) {
+		preg_match_all('/<option .*?value="(.*?)".*?>(.*?)<\/option>/is', $match, $m);
+	
+		$basins = array();
+		foreach ($m[1] as $i => $row) {
+			$basins[] = array(
+					'id' => $row,
+					'name' => $m[2][$i]
+			);
+		}
+		return $basins;
+	}
+	public function parseBasinList() {
+		global $cfg;
+		$page_html = $this->fetchHtml($cfg['urls']['basins']);
+		
+		$select_html = $this->matchSelectHtml($page_html);
+		return $this->matchBasinList($select_html);
+	}
+	
+	public function matchStations($html) {
+		if (preg_match_all('/<select .*?<\/select>/is', $html, $m)) {
+			preg_match_all('/<option .*?value=".*?StationID=(.*?)".*?>([^<]*?)<\/option>/is', $m[0][0], $m);
+	
+			$stations = array();
+			foreach ($m[1] as $i => $row) {
+				if (preg_match('/^(.*)\((.+)\)\s*- Table$/', $m[2][$i], $m2)) {
+					$stations[] = array(
+							'id' => $row,
+							'name' => $m2[1],
+							'code' => $m2[2],
+					);
+				}
+			}
+	
+			return $stations;
+		} else {
+			return false;
+		}
+	}
+	public function parseStations() {
+		$sql = "
+			SELECT	d.basin_id
+					, d.datatype_id
+			FROM	`" . $this->getDatatypeTable() . "` d
+			WHERE	d.status = 'current'
+			ORDER BY
+					d.basin_id, d.datatype_id
+		";
+		$rows = $this->connect()->fetchAll($sql);
+		
+		global $cfg;
+		foreach ($rows as $row) {
+			$basin_id = $row['basin_id'];
+			$datatype_id = $row['datatype_id'];
+			$url = $cfg['urls']['stations']."?Basin=$basin_id&DataType=$datatype_id";
+			
+			$html = $this->fetchHtml($url);
+			$stations = $this->matchStations($html);
+			$this->saveStations($stations, $basin_id, $datatype_id);
+		}
+		return $html;
+	}
+	public function parseStationsByBasinAndDatatype($basin_id, $datatype_id) {
+		$basin_id = intval($basin_id);
+		$datatype_id = intval($datatype_id);
+		
+		global $cfg;
+		$url = $cfg['urls']['stations']."?Basin=$basin_id&DataType=$datatype_id";
+		
+		$html = $this->fetchHtml($url);
+		$stations = $this->matchStations($html);
+		
+		return $stations;
+	}
+	public function saveStations($stations, $basin_id, $infotype_id) {
+		$basin_id = intval($basin_id);
+		$infotype_id = intval($infotype_id);
+		
+		$saved_amount = 0;
+		if (is_array($stations)) {
+			$station_strids = array();
+			foreach ($stations as $i => $station) {
+				$station_strid = trim($station['id']);
+				$description = trim($station['name']);
+				$station_code = trim($station['code']);
+				if (isset($station_strids[$station_strid])) {
+					$station_strids[$station_strid] .= '/'.$description;
+				} else {
+					$station_strids[$station_strid] = $description;
+				}
+			}
+			foreach ($station_strids as $station_strid => $description) {
+				$sql = "
+					INSERT INTO	station
+						SET	basin_id = $basin_id,
+							infotype_id = $infotype_id,
+							html_id = 0,
+							html_version = 0,
+							station_strid = '" . addslashes($station_strid) . "',
+							descriptor = '" . addslashes($description) . "',
+							update_time = NOW(),
+							status = 'added'";
+				$this->connect()->query($sql);
+			}
+		}
 	}
 }
 ?>

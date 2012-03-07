@@ -66,10 +66,10 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		return $cfg['dbs']['realtime-data']['database'];
 	}
 	function getRealtimeDataTbname($basin_id, $infotype_id, $station_strid) {
-		$basin_id = intval($basin_id);
-		$infotype_id = intval($infotype_id);
+		//$basin_id = intval($basin_id);
+		//$infotype_id = intval($infotype_id);
 		$station_strid = strtolower(strval($station_strid));
-		return "basin_${basin_id}_datatype_${infotype_id}_$station_strid";
+		return $station_strid;
 	}
 	/**
 	 * 保存分析后的所有数据
@@ -81,19 +81,16 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 	 * @return int	$text_id
 	 */
 	function updateTextdataData($text_id, $basin_id, $infotype_id, $station_strid, $data) {
-		$text_id	= intval($text_id);
-		//$start_time	= isset($data['start_time'])	? $data['start_time'] : '';
-		//$end_time	= isset($data['end_time'])		? $data['end_time'] : '';
+		$text_id = intval($text_id);
+		$records = &$data['records'];
+		$columns = &$data['columns'];
 		
-		$records = $data['records'];
-		$columns = $data['columns'];
-		
-		// 处理抓取到的内容为空的情况
+		// for empty ingested data
 		if (empty($columns)) return false;
 		
 		$dbname = $this->getRealtimeDataDbname();
 		$tbname = $this->getRealtimeDataTbname($basin_id, $infotype_id, $station_strid);
-		// 表还不存在就先创建表
+		// create data table if not exists
 		$tableDesc = $this->connect('realtime-data')->describeTable($tbname);
 		if (!$tableDesc) {
 			$this->createRealtimeDataTable($text_id, $columns, $dbname, $tbname, $basin_id, $infotype_id, $station_strid);
@@ -106,17 +103,17 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		foreach ($tableDesc as $row) {
 			$name = $row['COLUMN_NAME'];
 			$table_fields[$name] = $row;
-			// 把所有数据字段设置为 null，保证插入个别字段的数据时不会出错
+			// make sure all data field is null
 			if ($row['IS_NULLABLE'] == 'NO' && $row['COLUMN_TYPE'] == 'float') {
 				$sql = "ALTER TABLE `$dbname`.`$tbname` CHANGE `$name` `$name` FLOAT NULL";
 				$this->connect()->query($sql);
 			}
 		}
-
+		
 		foreach ($columns as $i => $field) {
 			$name = $field['field'];
 			
-			// 如果有新字段出现，那么动态添加字段
+			// dynamically add new layer field
 			if (!isset($table_fields[$name])) {
 				$sql = "ALTER TABLE `$dbname`.`$tbname` ADD `$name` FLOAT NULL";
 				$this->connect()->query($sql);
@@ -126,7 +123,6 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 						'COLUMN_TYPE'	=> 'float',
 						'IS_NULLABLE'	=> 'YES'
 				);
-				$fields_values[$name] = floatval($record[$i]);
 			}
 			
 			if (in_array($name, array('id', 'basin_id', 'infotype_id', 'text_id', 'station', 'date_and_time'))) {
@@ -134,7 +130,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 			}
 			/**
 			 * 保存字段信息
-			 */
+			 * /
 			$sql = "
 				SELECT	id
 				FROM	station_field
@@ -146,7 +142,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 			$ids = $this->connect()->fetchAll($sql);
 			
 			$descriptor = isset($field['descriptor']) ? $field['descriptor'] : '';
-			if (empty($ids)) {
+			if (empty($ids)) {pre('xx',1);
 				$sql = "
 					INSERT INTO
 							station_field
@@ -183,7 +179,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 						$this->connect()->query($sql);
 					}
 				}
-			}
+			}*/
 			
 			/**
 			 * 保存layer信息
@@ -194,11 +190,12 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 				WHERE	field = '" . addslashes($name) . "'
 			";
 			$layer = $this->connect()->fetch($sql);
+			$layer_description = $field['fullname'];
 			if ($layer) {
-				if ($descriptor) {
+				if ($layer_description) {
 					$sql = "
 						UPDATE	layer
-						SET		description = '" . addslashes($descriptor) . "'
+						SET		description = '" . addslashes($layer_description) . "'
 								, text_id = $text_id
 						WHERE	layerid = $layer[layerid]
 					";
@@ -209,7 +206,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 					INSERT INTO
 							layer
 					SET		field = '" . addslashes($name) . "'
-							, description = '" . addslashes($descriptor) . "'
+							, description = '" . addslashes($layer_description) . "'
 							, text_id = $text_id
 				";
 				$this->connect()->query($sql);
@@ -246,7 +243,11 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 				$column_type = $table_fields[$name]['COLUMN_TYPE'];
 				
 				if ($column_type == 'float') {
-					$fields_values[$name] = floatval($record[$i]);
+					if ($record[$i] == '') {
+						$fields_values[$name] = 'NULL';
+					} else {
+						$fields_values[$name] = floatval($record[$i]);
+					}
 					
 				} elseif ($column_type == 'varchar(255)') {
 					$fields_values[$name] = "'".addslashes($record[$i])."'";
@@ -256,8 +257,8 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 					
 				} elseif ($column_type == 'datetime') {
 					$fields_values[$name] = "'".addslashes($record[$i])."'";
-					$record_time = strtotime($record[$i]);
-					$record_datetime = date('Y-m-d H:i:s', $record_time);
+					$record_time = @strtotime($record[$i]);
+					$record_datetime = @date('Y-m-d H:i:s', $record_time);
 					
 					$start_time = is_null($start_time) ? $record_time : min($start_time, $record_time);
 					$end_time = is_null($end_time) ? $record_time : max($end_time, $record_time);
@@ -273,7 +274,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 				) VALUES";
 			}
 			
-			$last_time = strtotime($last_row['date_and_time']);
+			$last_time = @strtotime($last_row['date_and_time']);
 			if (!$last_time || $last_time < $record_time) {
 				$values[] .= "($text_id, $basin_id, $infotype_id, ".implode(",", $fields_values).")";
 			}
@@ -281,30 +282,22 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		
 		// 进行一些必要的清理
 		$this->clearRealtimeDataRecords($dbname, $tbname, $text_id, $start_time, $end_time);
+		
+		$inserted = 0;
 		if (!empty($values)) {
 			$sql = "
 				INSERT INTO
 						`$dbname`.`$tbname` $fileds"
 				.implode(",\n", $values);
 			$this->connect()->query($sql);
+			$inserted = $this->connect()->affectedRows();
 		}
-		
-		/**
-		 * 统计必要的数据
-		 */
-		$sql = "
-			SELECT	COUNT(*)
-			FROM	textdata AS t
-			JOIN	`$dbname`.`$tbname` AS d
-				ON	t.id = d.text_id
-			WHERE	t.id = $text_id";
-		$inserted = intval($this->connect()->fetchOne($sql));
 		
 		if ($start_time && $end_time) {
 			$sql = "
 				UPDATE	textdata
-				SET		start_time = '".addslashes($start_time)."',
-						end_time = '".addslashes($end_time)."',
+				SET		start_time = '" . @date('Y-m-d H:i:s', $start_time) . "',
+						end_time = '" . @date('Y-m-d H:i:s', $end_time) . "',
 						inserted_num = $inserted,
 						records_num = $recorded
 				WHERE	id = $text_id";
@@ -321,11 +314,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		
 		$dbname = $this->getRealtimeDataDbname();
 		$tbname = $this->getRealtimeDataTbname($basin_id, $infotype_id, $station_strid);
-		// 表还不存在说明抓取内容为空，之前没有创建表
 		$tableDesc = $this->connect('realtime-data')->describeTable($tbname);
-		if (!$tableDesc) {
-			return true;
-		}
 		
 		/**
 		 * 从表结构中取得字段信息
@@ -345,7 +334,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 						, SUM(IF(`$name` > -1000 AND `$name` < -999, 0, 1)) records
 				FROM	`$dbname`.`$tbname`
 				WHERE	`$name` IS NOT NULL
-					AND	`$name` != 0.0
+			--		AND	`$name` != 0.0
 					AND	!(`$name` > -1000 AND `$name` < -999)
 			";
 			$row = $this->connect()->fetch($sql);
@@ -438,19 +427,18 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		
 		$this->connect()->query($sql);
 	}
-	function clearRealtimeDataRecords($dbname, $tbname, $text_id, $start_time, $end_time) {
+	function clearRealtimeDataRecords($dbname, $tbname, $text_id, $start_timestamp, $end_timestamp) {
+		$start_time = @date('Y-m-d H:i:s', $start_timestamp);
+		$end_time = @date('Y-m-d H:i:s', $end_timestamp);
 		/**
 		 * 删除不是原始文本的数据记录
-		 */
+		 * /
 		$sql = "
 			SELECT	d.text_id
 			FROM	`$dbname`.`$tbname` AS d
 			LEFT JOIN
 					textdata AS t
 				ON	d.text_id = t.id
-				AND	d.basin_id = t.basin_id
-				AND	d.infotype_id = t.infotype_id
-				AND	d.station = t.station_strid
 			WHERE	t.id IS NULL
 			GROUP BY
 					d.text_id
@@ -463,7 +451,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 				WHERE	text_id = $row[text_id]
 			";
 			$this->connect()->query($sql);
-		}
+		}*/
 		
 		/**
 		 * 保证当前文本所含时间段内无重复数据
@@ -476,6 +464,8 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 				AND	date_and_time <= '$end_time'
 		";
 		$this->connect()->query($sql);
+		
+		return $this->connect()->affectedRows();
 	}
 	
 	public function getUpdatingVersion() {
@@ -524,21 +514,8 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 	public function getTextdataById($text_id) {
 		return $this->getRecordByProperty('Id', $text_id);
 	}
-	public function getTextdataByVersion($basin_id, $infotype_id, $station_strid, $version) {
-		$basin_id		= intval($basin_id);
-		$infotype_id	= intval($infotype_id);
-		$station_strid	= strval($station_strid);
-		$version		= intval($version);
-		
-		$sql = "
-			SELECT	text_content AS text
-			FROM	`" . $this->getTable() . "`
-			WHERE	basin_id		= $basin_id
-				AND	infotype_id		= $infotype_id
-				AND	station_strid	= '".addslashes($station_strid)."'
-				AND	version			= $version
-		";
-		return $this->connect()->fetchOne($sql);
+	public function getTextdataByVersion($basin_id, $datatype_id, $station_strid, $version) {
+		return $this->getRecordByProperty ( array ('BasinId' => $basin_id, 'TypeId' => $datatype_id, 'StationId' => $station_strid, 'Version' => $version ) );
 	}
 	
 	public function setStatus($basin_id, $infotype_id, $station_strid, $version, $status) {
@@ -584,7 +561,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 			. "&DataType=$DataType"
 			. "&StationID=$StationID";
 	}
-	public function ingestTextdata($url, $StationDescriptor, &$StationCode) {
+	public function ingestTextdata($url, &$StationCode = null) {
 		$html = $this->ingestHtml($url);
 		//$html = '<p><a id="ctl00_ctl00_cphContentSection_MainContentArea_ctl00_OriginalFile" href="/forecasting/data/hydro/tables/ATH-RATHATH-WL.txt">View File</a></p>';
 		
@@ -613,7 +590,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 	 * @author malian 2010-05-19
 	 * 匹配列信息
 	 */
-	public function parseContent($text, $station_strid) {
+	public function parseContent($text) {
 		$lines = preg_split('/\r\n|\r|\n/', $text);
 		unset($text);
 	
@@ -625,7 +602,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		$record		= '';
 		foreach ($lines as $line) {
 			if (trim($line) == '') continue;
-			$type = $this->line_type($line, $station_strid);
+			$type = $this->line_type($line);
 			//pre(array($last_type, $type, $line));
 			
 			if ($last_type == 'head_start') {
@@ -809,7 +786,9 @@ RBIRALIC : Birch River below Alice Creek
 				return preg_match('/^\s*?'.$StationID.'\s*([^\:\s]+( \S+)*(\s{2,}|\s*$))+/', $line);
 			case 'record-v2':
 				// 07OC001,2012-01-21 00:00:00,0.734
-				return preg_match('/^'.$StationID.'(,[^,]*)+/', $line);
+				//return preg_match('/^'.$StationID.'(,[^,]*)+/', $line);
+				// a loose way
+				return preg_match('/^[0-9A-Z]{7},\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(,[^,]*)+/', $line);
 			case 'last_update':
 				return preg_match('/^.*?Last Updated\:\s*(\d{4}-\d{2}-\d{2})\s*$/', $line);
 			case 'update_time':

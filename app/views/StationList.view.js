@@ -7,20 +7,20 @@ var viewStationList = {
 				docked : 'top',
 				xtype : 'toolbar',
 				title : '',
-				/*scrollable: {
-					direction: 'horizontal',
-					indicators: false,
-				},*/
+				/*
+				 * scrollable: { direction: 'horizontal', indicators: false, },
+				 */
 				items : [ {
 					text : 'Back',
 					ui : 'back',
 				}, {
-					xtype: 'spacer',
+					xtype : 'spacer',
 				}, {
-					text: 'Reload',
+					text : 'Reload',
 					ui : 'round',
 				} ]
-			},{
+			},
+			{
 				docked : 'bottom',
 				xtype : 'toolbar',
 				title : '',
@@ -31,7 +31,8 @@ var viewStationList = {
 				store : null,
 				grouped : true,
 				indexBar : true,
-				itemTpl : [ '<span class="we-h2">{i}.</span> {description}<br />',
-						'<span class="we-h2">{serial} - {strid}</span>' ]
+				itemTpl : [
+						'<span class="we-h2">{i}.</span> {Description}<br />',
+						'<span class="we-h2">{id}</span>' ]
 			} ]
 }

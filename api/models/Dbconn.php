@@ -93,6 +93,9 @@ class ML_Model_Dbconn {
 	public function lastInsertId() {
 		return $this->db->lastInsertId();
 	}
+	public function affectedRows() {
+		return $this->db->affectedRows();
+	}
 	
 	public function describeTable($tableName) {
 		return $this->db->describeTable($tableName);

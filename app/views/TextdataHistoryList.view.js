@@ -21,13 +21,31 @@ var viewTextdataHistoryList = {
 		scrollable : true,
 		html : '',
 	}, {
+		xtype : 'toolbar',
+		docked : 'bottom',
+		items : [ {
+			xtype: 'spacer',
+		}, {
+			text : 'Parse current',
+		}, {
+			text : 'Parse all',
+		}, {
+			xtype: 'spacer',
+		} ]
+	}, {
 		docked : 'bottom',
 		xtype : 'toolbar',
+		ui : 'light',
 		items : [ {
-			flex : 2,
+			xtype: 'spacer',
+		}, {
 			id : 'textdataSelect',
 			xtype : 'selectfield',
 			store : null,
+			style : 'text-align: center',
+			disabled : true,
+		}, {
+			xtype: 'spacer',
 		} ]
 	} ]
 }

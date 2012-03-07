@@ -12,10 +12,10 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 	}
 	
 	protected $properties = array (
-			'Id' => 'layerid',
-			'Abbrev' =>	'field',
+			'Id' => 'datatype_id',
 			'Description' => 'description',
-			'OriginTextId' => 'text_id',
+			'BasinId' => 'basin_id',
+			'Version' => 'version',
 	);
 	public function getTable() {
 		return 'datatype';
@@ -25,6 +25,13 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 	}
 
 	
+	protected function getLatestVersion() {
+		$sql = "
+			SELECT	MAX(version)
+			FROM	`" . $this->getTable() . "`
+		";
+		return $this->connect()->fetchOne($sql);
+	}
 	function getDatatypeListByIds(array $dataTypeIds) {
 		foreach ($dataTypeIds as &$id) {
 			$id = intval($id[0]) . ',' . intval($id[1]);
@@ -44,23 +51,60 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 		return $this->connect()->fetchAll($sql);
 	}
 	
-	function getBasinInfotypeList() {
-		$sql = "
-			SELECT	b.basin_id
-					, b.descriptor basin_descriptor
-					, b.version basin_version
-					, i.version infotype_version
-					, i.infotype_id
-					, i.descriptor AS infotype_descriptor
-			FROM	basin_infotype i
-			JOIN	basin b
-				ON	i.bid = b.id
-			WHERE	b.status = 'current'
-				AND	i.status = 'current'
-			ORDER BY
-					i.basin_id, i.infotype_id
-		";
-		return $this->connect('realtime')->fetchAll($sql);
+	public function getDatatypeList($version = null) {
+		if ($version == null) {
+			$version = $this->getLatestVersion();
+		}
+		$version = intval($version);
+		
+		$options = array(
+			'WHERE' => "`" . $this->getPropertyField('Version') . "` = $version",
+			'ORDERBY' => 'description',
+		);
+		$objs = $this->getRecordList($options);
+		
+		$list = array();
+		foreach ($objs as $obj) {
+			$Id = intval($obj->Id);
+			$BasinId = intval($obj->BasinId);
+			
+			if (!isset($list[$Id])) {
+				$o = new stdClass();
+				$o->Id = $Id;
+				$o->Description = $obj->Description;
+				$o->Basins = array();
+				$list[$Id] = $o;
+			}
+			$list[$Id]->Basins[$BasinId] = $BasinId;
+		}
+		
+		return array_values($list);
+	}
+	public function getDatatypeListWithStatus($version = null) {
+		if ($version == null) {
+			$version = $this->getLatestVersion();
+		}
+		$version = intval($version);
+		
+		$list1 = $this->getDatatypeList($version - 1);
+		$list2 = $this->getDatatypeList($version);
+		
+		$list = array();
+		foreach ($list1 as $obj) {
+			$obj->Status = 'deleted';
+			$list[$obj->Id] = $obj;
+		}
+		
+		foreach ($list2 as $i => $obj) {
+			if (isset($list[$obj->Id])) {
+				$obj->Status = $obj->Description == $list[$obj->Id]->Description ? 'same' : 'changed';
+				unset($list[$obj->Id]);
+			} else {
+				$obj->Status = 'new';
+			}
+		}
+		
+		return array_merge($list, $list2);
 	}
 	
 	function getInfotypeListByBasin($basin_id) {
@@ -218,5 +262,107 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 				)
 		";
 		$this->connect('realtime_tool')->query($sql);
+	}
+	
+	
+	/**
+	 * ingest and parse page html functions
+	 */
+	public function parseDatatypeList() {
+		global $cfg;
+		$page_html = $this->fetchHtml($cfg['urls']['basins']);
+		
+		$__VIEWSTATE = '';
+		if (preg_match('/="__VIEWSTATE" value="(.+)"/', $page_html, $m)) {
+			$__VIEWSTATE = $m[1];
+		}
+		$__EVENTVALIDATION = '';
+		if (preg_match('/="__EVENTVALIDATION" value="(.+)"/', $page_html, $m)) {
+			$__EVENTVALIDATION = $m[1];
+		}
+		
+		$basin_select_html = $this->matchBasinSelectHtml($page_html);
+		$basinList = $this->matchBasinList($basin_select_html);
+		
+		$datatype_select_html = $this->matchDatatypeSelectHtml($page_html);
+		$datatypeList = $this->matchDatatypeList($datatype_select_html);
+		
+		foreach ($basinList as &$row) {
+			$basin_id = $row['id'];
+			$post_data = "__VIEWSTATE=" . urlencode($__VIEWSTATE)
+				. "&__EVENTVALIDATION=" . urlencode($__EVENTVALIDATION)
+				. "&ctl00\$ctl00\$cphContentSection\$MainContentArea\$BasinList=$basin_id";
+			$page_html = $this->fetchHtml($cfg['urls']['basins'], $post_data);
+			$select_html = $this->matchDatatypeSelectHtml($page_html);
+			$row['datatypeList'] = $this->matchDatatypeList($select_html);
+		}
+		
+		return $basinList;
+	}
+	protected function fetchHtml($url, $post_data = '') {
+		$info = array($url);
+	
+		$ch = curl_init($url);
+		$info[] = $ch;
+	
+		curl_setopt($ch, CURLOPT_HEADER, 0);
+		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+		if ($post_data) {
+			curl_setopt($ch, CURLOPT_POSTFIELDS, $post_data);
+		}
+	
+		$html = curl_exec($ch);
+		curl_close($ch);
+		$info[] = $html;
+	
+		if ($html) {
+			return $html;
+		} else {
+			return false;
+		}
+	}
+	protected function matchBasinSelectHtml($html) {
+		$id = 'ctl00_ctl00_cphContentSection_MainContentArea_BasinList';
+		$re = '/id="' . $id . '">.*?<\/select>/is';
+		if (preg_match($re, $html, $m)) {
+			$match = $m[0];
+			return $match;
+		} else {
+			return false;
+		}
+	}
+	protected function matchBasinList($match) {
+		preg_match_all('/<option .*?value="(.*?)".*?>(.*?)<\/option>/is', $match, $m);
+	
+		$basins = array();
+		foreach ($m[1] as $i => $row) {
+			$basins[] = array(
+					'id' => $row,
+					'name' => $m[2][$i]
+			);
+		}
+		return $basins;
+	}
+	protected function matchDatatypeSelectHtml($html) {
+		$name = 'ctl00\\$ctl00\\$cphContentSection\\$MainContentArea\\$DataTypeList';
+		$id = 'ctl00_ctl00_cphContentSection_MainContentArea_DataTypeList';
+		$re = '/<select name="' . $name . '" id="' . $id . '">.*?<\/select>/is';
+		if (preg_match($re, $html, $m)) {
+			return $m[0];
+		} else {
+			return false;
+		}
+	}
+	protected function matchDatatypeList($match) {
+		preg_match_all('/<option .*?value="(.*?)".*?>(.*?)<\/option>/is', $match, $m);
+	
+		$datatypes = array();
+		foreach ($m[1] as $i => $row) {
+			$datatypes[] = array(
+					'id' => $row,
+					'name' => $m[2][$i]
+			);
+		}
+		return $datatypes;
 	}
 }

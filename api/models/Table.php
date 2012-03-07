@@ -42,7 +42,15 @@ abstract class ML_Model_Table extends ML_Model_Dbconn {
 	);
 	public function getPropertiesString($prefix = '', $glue = ', ') {
 		$prefix = $prefix ? $prefix . "." : '';
-		return "$prefix`" . implode("`$glue$prefix`", $this->properties) . "`";
+		
+		$properties = array();
+		foreach ($this->properties as $p) {
+			if ($p) {
+				$properties[] = $p;
+			}
+		}
+		
+		return "$prefix`" . implode("`$glue$prefix`", $properties) . "`";
 	}
 	public function getTable() {
 		return 'test';
@@ -68,8 +76,7 @@ abstract class ML_Model_Table extends ML_Model_Dbconn {
 					$sql = "
 						SELECT	" . $this->getPropertiesString() . "
 						FROM	" . $this->getTable() . "
-						WHERE	" . $this->getPropertyField($propertyName) . " = '" . addslashes($propertyValue) . "'
-							";
+						WHERE	" . $this->getPropertyField($propertyName) . " = '" . addslashes($propertyValue) . "'";
 				} else {
 					$sql .= "
 							AND	" . $this->getPropertyField($propertyName) . " = '" . addslashes($propertyValue) . "'";

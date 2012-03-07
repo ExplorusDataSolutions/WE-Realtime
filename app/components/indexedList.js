@@ -36,6 +36,58 @@ Ext.define('WERealtime.dataview.List', {
             this.refresh();
         }
     },
+	onIndex: function(indexBar, index) {
+		var me = this,
+		    key = index.toLowerCase(),
+		    store = me.getStore(),
+		    groups = store.getGroups(),
+		    ln = groups.length,
+		    scrollable = me.getScrollable(),
+		    scroller, group, i, closest, id, item;
+		
+		if (scrollable) {
+		    scroller = me.getScrollable().getScroller();
+		}
+		else {
+		    return;
+		}
+		
+		var compareAsNumber = false;
+		if (key.match(/\d+\.\d*/)) {
+			key = parseFloat(key);
+			compareAsNumber = true;
+		}
+		for (i = 0; i < ln; i++) {
+		    group = groups[i];
+		    if (compareAsNumber) {
+		    	id = parseFloat(group.name);
+		    } else {
+		    	id = group.name.toLowerCase();
+		    }
+		    if (id == key || id > key) {
+		        closest = group;
+		        break;
+		    }
+		    else {
+		        closest = group;
+		    }
+		}
+		
+		if (scrollable && closest) {
+		    item = me.container.getViewItems()[store.indexOf(closest.children[0])];
+		
+		    
+		    scroller.stopAnimation();
+		
+		    
+		    var containerSize = scroller.getContainerSize().y,
+		        size = scroller.getSize().y,
+		        maxOffset = size - containerSize,
+		        offset = (item.offsetTop > maxOffset) ? maxOffset : item.offsetTop;
+		
+		    scroller.scrollTo(0, offset);
+		}
+	}
 });
 
 Ext.define('WERealtime.dataview.IndexedList', {

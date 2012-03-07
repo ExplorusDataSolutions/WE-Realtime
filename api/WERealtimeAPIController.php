@@ -237,354 +237,16 @@ class WERealtimeAPIController {
 		return $result;
 	}
 	
-	function getBasinList() {
-		$model = ML::instance('RealtimeBasin');
-		return $model->getList();
+	public function basinList($request) {
+		$modelBasin = $this->getModel('Basin');
+		$version = isset($request->version) ? intval($request->version) : false;
+		return $modelBasin->getBasinListWithStatus($version);
 	}
-	
-	function getDataTypeListByBasin($basin = '') {
-		$basin = isset($_REQUEST['basin']) ? $_REQUEST['basin'] : '';
+	public function datatypeList() {
+		$modelDatatype = $this->getModel('Datatype');
+		$objs = $modelDatatype->getDatatypeListWithStatus();
 		
-		$model = ML::instance('RealtimeInfotype');
-		return $model->getInfotypeListByBasin($basin);
-	}
-	
-	function getStationListByBasinAndDatatype($basin = '', $datatype = '') {
-		$basin		= isset($_REQUEST['basin'])		? $_REQUEST['basin'] : '';
-		$datatype	= isset($_REQUEST['datatype'])	? $_REQUEST['datatype'] : '';
-		
-		$model = ML::instance('RealtimeStation');
-		return $model->getListByBasinInfotypeId($basin, $datatype);
-	}
-	
-	function getData($basin = '', $datatype = '', $station = '', $ps = 1, $pl = 100) {
-		$basin		= isset($_REQUEST['basin'])		? $_REQUEST['basin'] : '';
-		$datatype	= isset($_REQUEST['datatype'])	? $_REQUEST['datatype'] : '';
-		$station	= isset($_REQUEST['station'])	? $_REQUEST['station'] : '';
-		
-		$model = ML::instance('RealtimeText');
-		return $model->getRecord($basin, $datatype, $station, $ps, $pl);
-	}
-	
-	function getUpdatingStatus() {
-		$RealtimeText = ML::instance('RealtimeText');
-		return $RealtimeText->getUpdatingStatus();
-	}
-	
-	function index() {
-		$path = dirname($_SERVER['SCRIPT_NAME']);
-		$baseUrl = 'http://' . $_SERVER['HTTP_HOST'] . ($path == '/' ? '' : $path);
-		
-		$s = $this->getServiceList();
-		$s = $s['servicelist'];
-?>
-<!DOCTYPE>
-<html>
-<head>
-<title>Real-time Data API Calls - Alberta Water Portal</title>
-<style type="text/css">
-body {
-	font-size: 12px
-}
-
-dl dt {
-	font-size: 24px
-}
-
-input,dl dd {
-	font-size: 16px
-}
-
-textarea {
-	font-size: 12px
-}
-</style>
-</head>
-
-<body>
-	<dl>
-		<dt>Stations Call</dt>
-		<dd>
-			<a href="<?php echo $baseUrl?>/stations"><?php echo $baseUrl?>/stations</a>
-			(<a href="<?php echo $baseUrl?>/stations?XML">XML</a>)
-		</dd>
-		<dt>Station Layer Data Call:</dt>
-		<dd>
-			<form method="post" action="<?php echo $baseUrl?>/postjsondata/"
-				enctype="text/xml">
-				<input type="submit" value="Post" /> below data to <?php echo $baseUrl?>/station
-(<a href="javascript:void(0)"
-					onclick="var fm=document.getElementsByTagName('form')[1];fm.action+='?XML';fm.submit()">XML</a>)<br />
-				<textarea name="jsondata" cols="80" rows="9"><?php echo '{
-    "request" : "getdata",
-    "serviceid" : 2,
-    "layerid" : "value",
-    "time" : {
-        "begintime" : "' . $s['time']['begintime'] . '",
-        "endtime" : "' . $s['time']['endtime'] . '" 
-    },
-    "station" : "Abee AGDM"
-}'?></textarea>
-			</form>
-		</dd>
-	</dl>
-</body>
-</html>
-<?php
-	}
-	function old_index() {
-		$rc = new ReflectionClass(get_class($this));
-		//pre(Reflection::export(new ReflectionClass('ReflectionClass'),1));
-		$rms = $rc->getMethods();
-		
-		$method_rps = array();
-		foreach ($rms as $rm) {
-			$methodName = $rm->getName();
-			$method_rps[$methodName] = array();
-			
-			$rps = $rm->getParameters();
-			foreach ($rps as $rp) {
-				$paramName = $rp->getName();
-				$isDefaultValueAvailable = $rp->isDefaultValueAvailable();
-				$method_rps[$methodName][$paramName]['isDefaultValueAvailable'] = $isDefaultValueAvailable;
-				if ($isDefaultValueAvailable) {
-					$method_rps[$methodName][$paramName]['defaultValue'] = $rp->getDefaultValue();
-				}
-			}
-		}
-		
-		$modelBasin = ML::instance('RealtimeBasin');
-		$basinList = $modelBasin->getList();
-		//$basinVersionList = $modelBasin->getVersionList();
-		//pre($basinList,1);
-		
-		$modelDatatype = ML::instance('RealtimeInfotype');
-		if (isset($basinList[0])) {
-			$datatypeList = $modelDatatype->getInfotypeListByBasin($basinList[0]['basin_id']);
-		} else {
-			$datatypeList = array();
-		}
-		//$datatypeVersionList = $modelDatatype->getVersionList();
-		//pre($datatypeList,1);
-		
-		$modelStation = ML::instance('RealtimeStation');
-		if (isset($basinList[0]) && isset($datatypeList[0])) {
-			$stationList = $modelStation->getListByBasinInfotypeId($basinList[0]['basin_id'], $datatypeList[0]['infotype_id']);
-		} else {
-			$stationList = array();
-		}
-		
-		$paramValues = array();
-		$paramValues['basin'] = addslashes(join('', ML::html_select($basinList, array(
-			'valueKey'	=> 'basin_id',
-			'textKey'	=> 'descriptor',
-			'attributes' => 'id="sel_basin" onchange="onBasinChanged(this)"'
-		))));
-		$paramValues['datatype'] = addslashes(join('', ML::html_select($datatypeList, array(
-			'valueKey'	=> 'infotype_id',
-			'textKey'	=> 'infotype_descriptor',
-			'attributes' => 'id="sel_datatype" onchange="onDatatypeChanged(this)"'
-		))));
-		$paramValues['station'] = addslashes(join('', ML::html_select($stationList, array(
-			'valueKey'	=> 'station_strid',
-			'textKey'	=> 'station_descriptor',
-			'attributes' => 'id="sel_station" onchange="getAPI()"'
-		))));
-		
-		$paramValues['request'] = addslashes(str_replace("\n", '', '<textarea rows="10" cols="80" onkeyup="getAPI()">{
-		    "request" : "getdata",
-		    "serviceid" : 2,
-		    "layerid" : 1,
-		    "time" : {
-		        "begintime" : "' . date('Y-m-d H:i:s', time() - 3600 * 24 * 30) . '",
-		        "endtime" : "' . date('Y-m-d H:i:s', time()) . '" 
-		    },
-		    "bbox" : {
-		        "upperright" : {
-		            "latitude": 60,
-		            "longitude": -115
-		        },
-		        "bottomleft" : {
-		            "latitude" : 55,
-		            "longitude" : -116
-		        } 
-		    } 
-		}</textarea>'));
-		
-		$paramValues['ps'] = addslashes('<input type="text" value="1" />');
-		$paramValues['pl'] = addslashes('<input type="text" value="100" />');
-		//$paramValues['getBasinList::version'] = addslashes(join('', ML::html_select($basinVersionList, array(
-		//	'valueKey'	=> 'version',
-		//	'textKey'	=> 'version',
-		//	'attributes' => 'onchange="getAPI()"'
-		//))));
-		//$paramValues['getDataTypeList::version'] = addslashes(join('', ML::html_select($datatypeVersionList, array(
-		//	'valueKey'	=> 'version',
-		//	'textKey'	=> 'version',
-		//	'attributes' => 'onchange="getAPI()"'
-		//))));
-		//pre($paramValues, 1);
-		
-		ML::head(array('title' => 'Real-time Data Ingesting Tool - Alberta Water Portal'));
-?>
-<link type="text/css" rel="stylesheet"
-	href="../../themes/default/realtime.css" />
-<script type="text/javascript" src="../../js/firefly.js"></script>
-<script type="text/javascript">
-var parameters = eval('(<?php echo ML::json_encode($method_rps)?>)');
-var paramvalues = eval('(<?php echo ML::json_encode($paramValues)?>)');
-</script>
-</head>
-
-<body>
-
-	<h1>API demo</h1>
-	<table id="tb" border="1" width="100%" cellpadding="3" cellspacing="1">
-		<tr>
-			<td width="100">API name</td>
-			<td><select id="sel_actions" onchange="selectParameters()">
-		<?php foreach ($rms as $rm):?>
-		<option><?php echo $rm->getName()?></option>
-		<?php endforeach;?>
-		</select></td>
-		</tr>
-		<tr>
-			<td>Parameters</td>
-			<td><table id="tb_parameters" border="0" width="100%" cellpadding="3"
-					cellspacing="1" bgcolor="Silver"></table></td>
-		</tr>
-		<tr>
-			<td>Returned format</td>
-			<td><select id="sel_format" onchange="getAPI()">
-					<option>XML</option>
-					<option>JSON</option>
-					<option>RSS</option>
-					<option>PHP Serialized</option>
-					<option>TAB</option>
-			</select></td>
-		</tr>
-		<tr>
-			<td>API URL</td>
-			<td><a id="api" target="ifm_api"></a></td>
-		</tr>
-	</table>
-	<iframe id="ifm_api" name="ifm_api" width="100%" frameborder="0"></iframe>
-	<script type="text/javascript">
-var apiURL = document.location.href;
-function selectParameters() {
-	var sel_action = document.getElementById('sel_actions');
-	
-	var tb_parameters = document.getElementById('tb_parameters');
-	for (var i = tb_parameters.rows.length - 1; i >= 0; i--) {
-		tb_parameters.deleteRow(i);
-	}
-	
-	var params = parameters[sel_action.value];
-	var pairs = [];
-	for (var paramName in params) {
-		var tr		= tb_parameters.insertRow(-1);
-		tr.bgColor	= 'white';
-		
-		var td_paramName	= tr.insertCell(-1);
-		var td_paramValue	= tr.insertCell(-1);
-		
-		td_paramName.style.width = '100px';
-		td_paramName.innerHTML = paramName;
-		
-		if (paramvalues[sel_action.value + '::' + paramName]) {
-			td_paramValue.innerHTML = paramvalues[sel_action.value + '::' + paramName];
-		}
-		if (paramvalues[paramName]) {
-			td_paramValue.innerHTML = paramvalues[paramName];
-		}
-		
-		if (td_paramValue.firstChild) {
-			pairs.push(paramName + '=' + td_paramValue.firstChild.value)
-		}
-	}
-	
-	getAPI();
-}
-function getAPI() {
-	var sel_action = document.getElementById('sel_actions');
-	
-	var tb_parameters = document.getElementById('tb_parameters');
-	var pairs = [];
-	for (var i = 0; tr = tb_parameters.rows[i]; i++) {
-		var cells = tr.cells;
-		if (cells[1].firstChild) {
-			pairs.push(cells[0].innerHTML + '=' + cells[1].firstChild.value);
-		}
-	}
-	
-	var api = document.getElementById('api');
-	var s = apiURL + '?action=' + sel_action.value
-		+ (pairs.length ? '&' + pairs.join('&') : '')
-		+ '&format=' + document.getElementById('sel_format').value;
-	api.href = api.innerHTML = s;
-}
-selectParameters();
-function onBasinChanged(sel) {
-	var sel_datatype = document.getElementById('sel_datatype');
-	if (!sel_datatype) {
-		getAPI();
-		return;
-	}
-	
-	var ajax = ML.Ajax();
-	ajax.onready = function(json) {
-		for (var i = sel_datatype.options.length - 1; i >= 0; i--) {
-			sel_datatype.remove(i);
-		}
-		
-		for (var i = 0, len = json.length; i < len; i++) {
-			var option = document.createElement('option');
-			option.text		= json[i].infotype_descriptor;
-			option.value	= json[i].infotype_id;
-			sel_datatype.options[sel_datatype.options.length] = option;
-		}
-		
-		onDatatypeChanged();
-	}
-	ajax.open('GET', apiURL + '?action=getDataTypeListByBasin&basin=' + sel.value + '&format=json');
-	ajax.send(null);
-}
-function onDatatypeChanged(sel) {
-	var sel_station = document.getElementById('sel_station');
-	if (!sel_station) {
-		getAPI();
-		return;
-	}
-	
-	var ajax = ML.Ajax();
-	ajax.onready = function(json) {
-		for (var i = sel_station.options.length - 1; i >= 0; i--) {
-			sel_station.remove(i);
-		}
-		
-		for (var i = 0, len = json.length; i < len; i++) {
-			var option = document.createElement('option');
-			option.text		= json[i].station_descriptor;
-			option.value	= json[i].station_strid;
-			sel_station.options[sel_station.options.length] = option;
-		}
-		
-		getAPI();
-	}
-	ajax.open('GET', apiURL + '?action=getStationListByStationAndDatatype'
-		+ '&basin=' + document.getElementById('sel_basin').value
-		+ '&datatype=' + document.getElementById('sel_datatype').value
-		+ '&format=json');
-	ajax.send(null);
-}
-
-var ifm_api = document.getElementById('ifm_api');
-var tb = document.getElementById('tb');
-ifm_api.style.height = document.body.offsetHeight - tb.offsetTop - tb.offsetHeight - 20 + 'px';
-</script>
-</body>
-</html>
-<?php
+		return array_values($objs);
 	}
 	
 	public function ingestingVersionList() {
@@ -593,7 +255,9 @@ ifm_api.style.height = document.body.offsetHeight - tb.offsetTop - tb.offsetHeig
 	}
 	public function stationList() {
 		$modelStation = $this->getModel('Station');
-		return $modelStation->getStationList();
+		$objs = $modelStation->getStationList();
+		
+		return $objs;
 	}
 	public function stationLayerList($request) {
 		$modelLayer = $this->getModel('Layer');
@@ -651,7 +315,7 @@ ifm_api.style.height = document.body.offsetHeight - tb.offsetTop - tb.offsetHeig
 			$description = $request->description;
 			
 			$url = $modelTextdata->ingestUrl($basin_id, $datatype_id, $station_strid);
-			$textdata = $modelTextdata->ingestTextdata($url, $description);
+			$textdata = $modelTextdata->ingestTextdata($url);
 			return array('Url' => $url, 'Text' => $textdata);
 		}
 	}
@@ -663,6 +327,116 @@ ifm_api.style.height = document.body.offsetHeight - tb.offsetTop - tb.offsetHeig
 		$layer = $request->layer;
 		
 		return $dataList = $modelLayer->getLayerDataList($basin_id, $datatype_id, $station_strid, $layer);
+	}
+	
+	public function parseTextdata($request) {
+		$text_id = intval ( $request->text_id );
+		$station_strid = $request->station_strid;
+		
+		$modelTextdata = $this->getModel ( 'Textdata' );
+		$textdata = $modelTextdata->getTextdataById ( $text_id );
+		
+		if ($textdata) {
+			$result = $modelTextdata->parseContent ( $textdata->Text );
+			
+			$basin_id = $textdata->BasinId;
+			$datatype_id = $textdata->TypeId;
+			$station_strid = $textdata->StationId;
+			$modelTextdata->updateTextdataData ( $text_id, $basin_id, $datatype_id, $station_strid, $result );
+			
+			// 从保存后的表中统计 field 的起始／结束时间
+			$modelTextdata->updateTextdataLayerInfo ( $basin_id, $datatype_id, $station_strid );
+			
+			$textdata = $modelTextdata->getTextdataById ( $text_id );
+			return array ('NewRecords' => $textdata->NewRecords, 'AllRecords' => $textdata->AllRecords );
+		} else {
+			return array ('NewRecords' => 0, 'AllRecords' => 0 );
+		}
+	}
+	
+	public function parseTextdataHistory($request) {
+		$basin_id = intval ( $request->basin_id );
+		$datatype_id = intval ( $request->datatype_id );
+		$station_strid = $request->station_strid;
+		
+		$modelTextdata = $this->getModel ( 'Textdata' );
+		$textdataList = $modelTextdata->getTextdataList($basin_id, $datatype_id, $station_strid);
+		
+		foreach ($textdataList as $row) {
+			$textdata = $modelTextdata->getTextdataById ( $row->Id );
+			$result = $modelTextdata->parseContent ( $textdata->Text );
+			
+			$modelTextdata->updateTextdataData($row->Id, $basin_id, $datatype_id, $station_strid, $result);
+			// 从保存后的表中统计 field 的起始／结束时间
+			$modelTextdata->updateTextdataLayerInfo($basin_id, $datatype_id, $station_strid);
+		}
+		
+		return array('Versions' => count($textdataList));
+	}
+	
+	public function stopCurrentIngesting($request) {
+		$version = $request->version;
+		$modelLog = $this->getModel('Log');
+		return $modelLog->stopIngesting($version);
+	}
+	
+	/**
+	 * Check updates for Basins, Data types, and Stations
+	 */
+	public function checkBasinList() {
+		$modelBasin = $this->getModel('Basin');
+		$basinList = $modelBasin->parseBasinList();
+		
+		/*foreach ($basinList as &$row) {
+			if ($row['id'] == 7) {
+				$row['name'] .= ' changed';
+			}
+		}*/
+		
+		return $basinList;
+	}
+	public function basinVersionList() {
+		$modelBasin = $this->getModel('Basin');
+		$basinList = $modelBasin->getVersionList();
+		
+		return $basinList;
+	}
+	public function checkDatatypeList() {
+		$modelDatatype = $this->getModel('Datatype');
+		
+		$cache_file = dirname(__FILE__) . '/datatypeList.txt';
+		if (false && file_exists($cache_file) && $cache_data = file_get_contents($cache_file)) {
+			$basinDatatypeList = unserialize($cache_data);
+		} else {
+			$basinDatatypeList = $modelDatatype->parseDatatypeList();
+			file_put_contents($cache_file, serialize($basinDatatypeList));
+		}
+		
+		$datatypeList = array();
+		foreach ($basinDatatypeList as $basin) {
+			$basin_id = intval($basin['id']);
+			foreach ($basin['datatypeList'] as $datatype) {
+				$datatype_id = intval($datatype['id']);
+				if (!isset($datatypeList[$datatype_id])) {
+					$datatypeList[$datatype_id] = array(
+							'id' => $datatype_id,
+							'name' => $datatype['name'],
+							'basins' => array(),
+							);
+				}
+				$datatypeList[$datatype_id]['basins'][] = $basin_id;
+			}
+		}
+		
+		return array_values($datatypeList);
+	}
+	public function checkStationList($request) {
+		$modelStation = $this->getModel('Station');
+		$basin_id = $request->basin_id;
+		$datatype_id = $request->datatype_id;
+		$stationList = $modelStation->parseStationsByBasinAndDatatype($basin_id, $datatype_id);
+		
+		return $stationList;
 	}
 }
 ?>
