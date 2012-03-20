@@ -16,6 +16,7 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 			'Description' => 'description',
 			'BasinId' => 'basin_id',
 			'Version' => 'version',
+			'UpdateTime' =>'update_time',
 	);
 	public function getTable() {
 		return 'datatype';
@@ -23,14 +24,18 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 	public function getDatabase() {
 		return 'realtime-tool';
 	}
-
 	
-	protected function getLatestVersion() {
+		
+	public function getVersionList() {
 		$sql = "
-			SELECT	MAX(version)
+			SELECT	`" . $this->getPropertyField('Version') . "`
+					, COUNT(DISTINCT(datatype_id)) datatype_total
+					, `" . $this->getPropertyField('UpdateTime') . "`
 			FROM	`" . $this->getTable() . "`
+			GROUP BY
+				`" . $this->getPropertyField('Version') . "`
 		";
-		return $this->connect()->fetchOne($sql);
+		return $this->connect()->fetchAll($sql);
 	}
 	function getDatatypeListByIds(array $dataTypeIds) {
 		foreach ($dataTypeIds as &$id) {
@@ -52,7 +57,7 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 	}
 	
 	public function getDatatypeList($version = null) {
-		if ($version == null) {
+		if ($version === null) {
 			$version = $this->getLatestVersion();
 		}
 		$version = intval($version);
@@ -72,6 +77,8 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 				$o = new stdClass();
 				$o->Id = $Id;
 				$o->Description = $obj->Description;
+				$o->Version = $obj->Version;
+				$o->UpdateTime = $obj->UpdateTime;
 				$o->Basins = array();
 				$list[$Id] = $o;
 			}
@@ -89,22 +96,35 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 		$list1 = $this->getDatatypeList($version - 1);
 		$list2 = $this->getDatatypeList($version);
 		
-		$list = array();
+		$objMap = array();
 		foreach ($list1 as $obj) {
 			$obj->Status = 'deleted';
-			$list[$obj->Id] = $obj;
+			$objMap[$obj->Id] = $obj;
 		}
 		
 		foreach ($list2 as $i => $obj) {
-			if (isset($list[$obj->Id])) {
-				$obj->Status = $obj->Description == $list[$obj->Id]->Description ? 'same' : 'changed';
-				unset($list[$obj->Id]);
+			$Id = $obj->Id;
+			if (isset($objMap[$Id])) {
+				$o = $objMap[$Id];
+				if ($obj->Description == $o->Description && !array_diff($obj->Basins, $o->Basins)) {
+					$obj->Status = 'same';
+				} else {
+					$obj->Status = 'changed';
+					if ($obj->Description != $o->Description) {
+						$obj->oldDescription = $o->Description;
+					}
+					if (array_diff($obj->Basins, $o->Basins)) {
+						$obj->oldBasins = $o->Basins;
+					}
+				}
+				
+				unset($objMap[$Id]);
 			} else {
 				$obj->Status = 'new';
 			}
 		}
 		
-		return array_merge($list, $list2);
+		return array_merge($objMap, $list2);
 	}
 	
 	function getInfotypeListByBasin($basin_id) {
@@ -129,119 +149,29 @@ class WERealtime_Model_Datatype extends ML_Model_Table {
 		return $this->connect('realtime')->fetchAll($sql);
 	}
 	
-	function getVersionList() {
+	public function getLatestVersion() {
 		$sql = "
-			SELECT	version
-					, basin_version
-					, COUNT(DISTINCT(CONCAT(basin_id, infotype_id))) basin_infotype_num
-					, COUNT(DISTINCT(infotype_id)) infotype_num
-					, COUNT(DISTINCT(basin_id)) basin_num
-			FROM	basin_infotype b
+			SELECT	MAX(`" . $this->getPropertyField('Version') . "`)
+			FROM	`" . $this->getTable() . "`
 			WHERE	TRUE
-			GROUP BY
-					version
 		";
-		return $this->connect('realtime')->fetchAll($sql);
+		return $this->connect()->fetchOne($sql);
 	}
 	
-	function getVersionDetailsList($brief = false) {
-		$this->connect('realtime_tool')->query("DROP TABLE IF EXISTS `tmp_v_basin_infotype`");
-		$sql = "
-			CREATE TABLE `tmp_v_basin_infotype` (
-				`id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY ,
-				`basin_id` INT NOT NULL ,
-				`v` INT NOT NULL DEFAULT 0, -- default 0 is needed to void error: Field *** doesn't have a default value
-				INDEX ( `basin_id` ),
-				INDEX ( `v` )
-			) ENGINE = MYISAM
-			SELECT	i.basin_id
-					, i.version AS v
-			FROM	basin_infotype AS i
-			WHERE ".($brief ? "
-					i.status != 'deleted'" : "
-					TRUE")."
-			GROUP BY
-					i.basin_id, i.version
-			ORDER BY
-					i.basin_id, i.version;
-		";
-		$this->connect('realtime_tool')->query($sql);
-		
-		$sql = "
-			SELECT	b.basin_id,
-					b.descriptor AS basin_descriptor,
-					b.version AS basin_version,
-					i2.infotype_id AS infotype_id,
-					i2.descriptor AS infotype_descriptor,
-					UNIX_TIMESTAMP(i2.update_time) AS infotype_update_time,
-					i2.version AS infotype_version,
-					IF (i1.id IS NULL, '+', IF (i1.descriptor = i2.descriptor, '=', '*')) AS status
-					, i2.status AS current
-			FROM	basin AS b
-			JOIN	basin_infotype AS i2
-				ON	i2.bid = b.id
-			JOIN	tmp_v_basin_infotype AS v2
-				ON	i2.basin_id = v2.basin_id
-				AND	i2.version = v2.v
-			LEFT JOIN
-					tmp_v_basin_infotype AS v1
-				ON	v1.id = v2.id - 1
-				AND	v1.basin_id = v2.basin_id
-			LEFT JOIN
-					basin_infotype AS i1
-				ON	i1.basin_id = i2.basin_id
-				AND	i1.infotype_id = i2.infotype_id	
-				AND	i1.version = v1.v
-			WHERE" . ($brief ? "
-					i1.descriptor != i2.descriptor
-				OR	i1.id IS NULL" : "
-					TRUE") . "
-			
-			UNION
-			
-			SELECT	b.basin_id,
-					b.descriptor AS basin_descriptor,
-					b.version AS basin_version,
-					i1.infotype_id AS infotype_id,
-					IF (v2.id IS NULL, i1.descriptor, '') AS infotype_descriptor,
-					UNIX_TIMESTAMP(i1.update_time) AS infotype_update_time,
-					IF (v2.id IS NULL, v1.v, v2.v) AS infotype_version,
-					IF (v2.id IS NULL, '=', '-') AS status
-					, i1.status AS current
-			FROM	basin AS b
-			JOIN	basin_infotype AS i1
-				ON	i1.basin_id = b.basin_id
-				AND	i1.basin_version = b.version
-			JOIN	tmp_v_basin_infotype AS v1
-				ON	i1.basin_id = v1.basin_id
-				AND	i1.version = v1.v
-			LEFT JOIN
-					tmp_v_basin_infotype AS v2
-				ON	v1.id = v2.id - 1
-				AND	v1.basin_id = v2.basin_id
-			LEFT JOIN
-					basin_infotype AS i2
-				ON	i1.basin_id = i2.basin_id
-				AND	i1.infotype_id = i2.infotype_id	
-				AND	i2.version = v2.v
-			WHERE	i2.id IS NULL";
-		$rows = $this->connect('realtime_tool')->fetchAll($sql);
-		
-		/**
-		 * 不同的 basin 是可以有不同数量 infotype 的版本历史的。
-		 */
-		$list = array();
-		foreach ($rows as $i => $row) {
-			$bid = $row['basin_id'];
-			$iid = $row['infotype_id'];
-			$iv = $row['infotype_version'];
-			if (!isset($list[$bid][$iv][$iid])) {
-				$list[$bid][$iv][$iid] = $row;
-			}
+	public function saveDatatype($dataType) {
+		foreach ($dataType->Basins as $BasinId) {
+			$params = array(
+					'Id' => $dataType->Id,
+					'Description' => $dataType->Description,
+					'BasinId' => $BasinId,
+					'Version' => $dataType->Version,
+					'UpdateTime' => @date('Y-m-d H:i:s'),
+					);
+			if (!$this->saveRecordByProperty($params, array('Id', 'BasinId', 'Version'))) {
+				return false;
+			} 
 		}
-		ksort($list);
-		
-		return $list;
+		return true;
 	}
 	
 	function makeSureLatestVersionCurrent() {

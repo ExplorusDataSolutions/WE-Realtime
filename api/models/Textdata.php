@@ -33,6 +33,7 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 	const RE_HEAD = '/\|\s*((\w+( \w+)*)(\s*\(.*?\))?)\s*?(?=\|)/';
 	const RE_RECORD = '/(\S+( \S+)*)(\s{2,}|\s*$)/';
 	
+	
 	function updateTextdataContent($basin_id, $infotype_id, $station_strid, $station_version, $textdata, $error, $current_version) {
 		$basin_id			= intval($basin_id);
 		$infotype_id		= intval($infotype_id);
@@ -56,7 +57,6 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 				version = $current_version,
 				status = 'current'
 		";
-	
 		$this->connect()->query($sql);
 		return $this->connect()->lastInsertId($sql);
 	}
@@ -472,44 +472,69 @@ class WERealtime_Model_Textdata extends ML_Model_Table {
 		$modelStation = $this->getModel('Station');
 		
 		$sql = "
-				SELECT	basin_id
-						, infotype_id
-						, station_strid
-						, version
+			SELECT	MAX(station_version)
+			FROM	`" . $this->getTable() . "`
+			WHERE	status = 'current'";
+		$record_with_current_status = $this->connect()->fetchOne($sql);
+		
+		if ($record_with_current_status) {
+			$sql = "
+				SELECT	MAX(station_version)
 				FROM	`" . $this->getTable() . "`
-				WHERE	status = 'current'
-		";
-		//pre($this->connect('realtime_tool')->fetchAll($sql),1);
-		
-		$sql = "
-			SELECT	s.basin_id
-					, s.infotype_id
-					, s.station_strid
-					, s.descriptor AS station_descriptor
-					, IF (t.version, t.version, 0) AS text_version
-			FROM	`" . $modelStation->getTable() . "` AS s
-			LEFT JOIN (
-				$sql
-			) AS t
-				ON	s.basin_id		= t.basin_id
-				AND	s.infotype_id	= t.infotype_id
-				AND	s.station_strid	= t.station_strid
-			WHERE	s.status = 'current'
-			GROUP BY
-					t.version
-		";
-		// 取消注释以方便查看当前 current 状态下都有哪些版本
-		//pre($this->connect('realtime_tool')->fetchAll($sql),1);
-		
-		$sql = "
-			SELECT
-				IF (COUNT(*) > 1, MAX(text_version), MAX(text_version) + 1)
-			FROM (
-				$sql
-			) AS t
-		";
-		
-		return $this->connect()->fetchOne($sql);
+				WHERE	status = 'current'";
+			$station_version = $this->connect()->fetchOne($sql);
+			
+			$sql_current_textdata = "
+					SELECT	basin_id
+							, infotype_id
+							, station_strid
+							, station_version
+							, version
+					FROM	`" . $this->getTable() . "`
+					WHERE	status = 'current'
+			";
+			//pre($this->connect()->fetchAll($sql_current_textdata),1);
+			
+			$sql = "
+				SELECT	s.basin_id
+						, s.infotype_id
+						, s.station_strid
+						, s.version
+						, t.station_version
+						, s.descriptor AS station_descriptor
+						, IF (t.version, t.version, 0) AS text_version
+				FROM	`" . $modelStation->getTable() . "` AS s
+				LEFT JOIN (
+					$sql_current_textdata
+				) AS t
+					ON	s.basin_id		= t.basin_id
+					AND	s.infotype_id	= t.infotype_id
+					AND	s.station_strid	= t.station_strid
+					AND	s.version		= t.station_version
+				WHERE	s.version = $station_version
+				GROUP BY
+						t.version
+			";
+			// 取消注释以方便查看当前 current 状态下都有哪些版本
+			//pre($this->connect()->fetchAll($sql),1);
+			
+			$sql = "
+				SELECT
+					IF (COUNT(*) > 1, MAX(text_version), MAX(text_version) + 1)
+				FROM (
+					$sql
+				) AS t
+			";
+			
+			return $this->connect()->fetchOne($sql);
+		} else {
+			$sql = "
+				SELECT	MAX(version)
+				FROM	`" . $this->getTable() . "`
+				WHERE	TRUE
+			";
+			return intval($this->connect()->fetchOne($sql)) + 1;
+		}
 	}
 	public function getTextdataById($text_id) {
 		return $this->getRecordByProperty('Id', $text_id);

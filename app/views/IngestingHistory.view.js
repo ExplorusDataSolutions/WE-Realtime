@@ -21,13 +21,14 @@ var viewHistoryList = {
 				id : 'historyList',
 				xtype : 'list',
 				store : null,
+				emptyText : 'No ingesting history found.',
 				itemTpl : [
-						'<tpl if="total">',
+						'<tpl if="end_time">',
 						'Version {version}, Total {total}<br />',
 						'<span class="we-date">Final status:</span> <span class="we-h2">{final_status}</span><br />',
 						'<span class="we-date">{start_time} -- {end_time}</span>',
 						'<tpl else>',
-						'Version {version}, Ingesting...<br />',
+						'Version {version}, Total {total}, Ingesting...{unexpected_stop}<br />',
 						'<span class="we-date">Current status:</span> <span class="we-h2">{final_status}</span><br />',
 						'<span class="we-date">{start_time} -- Soon</span>',
 						'</tpl>' ]

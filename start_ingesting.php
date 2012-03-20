@@ -1,4 +1,5 @@
 <?php
+ignore_user_abort();
 
 require_once 'conf.php';
 require_once 'api/WERealtimeAPIController.php';
@@ -18,39 +19,17 @@ if (0) {
 	$modelTextdata = $controller->getModel('Textdata');
 	
 	
-	$basin_id = 1;
-	$infotype_id = 1;
-	$station_strid = 'RLOONMOU';
-	$station_descriptor = 'Loon River near the Mouth';
+	$basin_id = 10;
+	$infotype_id = 3;
+	$station_strid = 'RPAYNELK';
+	$station_descriptor = 'Payne Lake Reservoir near Mountain View';
 	$station_version	= 0;
 	
-	$basin_id = 1;
-	$infotype_id = 6;
-	$station_strid = 'BEAV';
-	$station_descriptor = 'Beaverlodge';
-	$station_version	= 0;
+	$url = $modelTextdata->ingestUrl($basin_id, $infotype_id, $station_strid);
+	$modelLog->debug($url);
 	
-	$basin_id = 1;
-	$infotype_id = 1;
-	$station_strid = 'RPEACAR';
-	$station_descriptor = 'Peace River at Carcajou';
-	$station_version	= 0;
-	
-	$basin_id = 4;
-	$infotype_id = 6;
-	$station_strid = 'ABEE';
-	$station_descriptor = 'Peace River at Carcajou';
-	$station_version	= 0;
-	
-	$ref_station_code = '';
-	$textdata = $modelTextdata->ingestTextdata(
-			$basin_id,
-			$infotype_id,
-			$station_strid,
-			$station_descriptor,
-			$ref_station_code
-	);
-
+	$textdata = $modelTextdata->ingestTextdata($url);
+	pre($textdata,1);
 	/**
 	 * 处理可能导致插入数据库出错的内容
 	 */
@@ -95,22 +74,22 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 	// 取得 current 状态的最新版本
 	$modelTextdata = $controller->getModel('Textdata');
 	$updatingVersion = $modelTextdata->getUpdatingVersion();
+	//pre($updatingVersion,1);
+	//pre($modelLog->getUpdatingStations(),1);
+	/*$current_station = '';
+	$stations = $modelLog->getUpdatingStations();
+	foreach ($stations as $i => $station) {
+		// case 1: an existing text_id with not 'current' status leads to empty text_version
+		if (empty($station['text_version']) || $station['text_version'] < $updatingVersion) {
+			$current_station = $station;
+			break;
+		}
+	}pre($current_station,1);*/
 	
 	$serial = $modelLog->addIngestLog('start ingesting', $updatingVersion);
 	$modelLog->debug("start: version $updatingVersion, serial: $serial");
 	
-	
-	// 取得 current 状态的 station 列表，以及相对应的 current 状态的 textdata
-	$stations = $modelLog->getUpdatingStations();
-	/*$last_station = false;
-	foreach ($stations as $i => $station) {pre(array($station['text_version'], $updatingVersion));
-		// 如果上次没循环完，接着循环
-		if ($station['text_version'] == $updatingVersion) {
-			$last_station = $station;
-		} else {
-			break;
-		}
-	}
+	/*
 	pre($last_station,1);
 	if ($last_station) {
 		$modelLog->debug("last unfinished station: $last_station[station_strid], $last_station[infotype_id]");pre('xx',1);
@@ -124,7 +103,7 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 		}
 	}*/
 	
-	$counter = 0;
+	$counter = 1;
 	while (true) {
 		$lastSerialInfo = $modelLog->getLastSerial();
 		if ($lastSerialInfo && !empty($lastSerialInfo['stop'])) {
@@ -136,7 +115,7 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 		
 		$current_station = '';
 		foreach ($stations as $i => $station) {
-			// case 1: an existing text_id with 'non-current' status leads to empty text_version
+			// case 1: an existing text_id with not 'current' status leads to empty text_version
 			if (empty($station['text_version']) || $station['text_version'] < $updatingVersion) {
 				$current_station = $station;
 				break;
@@ -151,12 +130,21 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 			$basin_id			= $station['basin_id'];
 			$infotype_id		= $station['infotype_id'];
 			$station_strid		= $station['station_strid'];
-			$station_version	= $station['station_version'];
+			$station_version	= $station['version'];
 			$station_descriptor = $station['station_descriptor'];
 			
 			$currentTextdata = $modelTextdata->getTextdataByVersion($basin_id, $infotype_id, $station_strid, $updatingVersion);
+			
 			// if the textdata of current version exists
 			if ($currentTextdata) {
+				// case 1: an existing text_id with 'current' status and previous 'version' leads to here
+				if ($station['text_version'] && $station['text_version'] != $updatingVersion) {
+					$modelLog->debug("Old textdata $station[text_id] current status cleared");
+					// clear old textdata 'current' status
+					$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $station['text_version'], '');
+					continue;
+				}
+				
 				$modelLog->debug("Existing textdata: $station_strid, $basin_id, $infotype_id, version: $updatingVersion");
 				// 把当前记录更新为 'current' 状态
 				$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $currentTextdata->Version, 'current');
@@ -220,7 +208,7 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 			}
 			
 			$counter++;
-			$modelLog->debug("Textdata $text_id ingesting finish");pre($counter,1);
+			$modelLog->debug("Textdata $text_id ingesting finish");//pre($counter,1);
 		}
 	}
 	// 记录结束抓取
@@ -242,7 +230,7 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 			. " total $counter stations updated";
 	}
 } else {
-	$output = "Ingesting is disabled by command, at $cmd->Time";
+	$output = "Ingesting is disabled by command, at $lastSerialInfo[stop_time]";
 }
 pre($output,1);
 if (EMAIL_REPORT_TO) {

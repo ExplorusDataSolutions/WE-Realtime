@@ -33,6 +33,6 @@ var viewStationList = {
 				indexBar : true,
 				itemTpl : [
 						'<span class="we-h2">{i}.</span> {Description}<br />',
-						'<span class="we-h2">{id}</span>' ]
+						'<span class="we-h2">- {id} - {Code}</span>' ]
 			} ]
 }

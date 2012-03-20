@@ -14,14 +14,17 @@ class MySQL {
 	}
 
 	function connect() {
-		$this->link = mysql_connect($this->hostname, $this->username, $this->password, $this->new);
+		// in case that mysqld not running
+		$this->link = @mysql_connect($this->hostname, $this->username, $this->password, $this->new);
 		
 		if (!$this->link) {
+			header("HTTP/1.1 501 Can not connect $this->username@$this->hostname");
 			die("Can not connect $this->username@$this->hostname");
 		}
 
 		if (!mysql_select_db($this->database, $this->link)) {
-			die("database $this->database does not exist.");
+			header("HTTP/1.1 501 Database $this->database does not exist.");
+			die("Database $this->database does not exist.");
 		}
 
 		$this->query('set names "utf8"');
@@ -77,11 +80,13 @@ class MySQL {
 		return mysql_insert_id($this->link);
 	}
 	
-	public function describeTable($tableName) {
+	public function describeTable($tableName, $databseName = '') {
+		$databseName = $databseName ? $databseName : $this->database;
+		
 		$sql = "
 			SELECT	1
 			FROM	information_schema.TABLES
-			WHERE	TABLE_SCHEMA = '" . addslashes($this->database) . "'
+			WHERE	TABLE_SCHEMA = '" . addslashes($databseName) . "'
 				AND	TABLE_NAME = '" . addslashes($tableName) . "'
 		";
 		$row = $this->fetchRow($sql);
@@ -92,7 +97,7 @@ class MySQL {
 		$sql = "
 			SELECT	*
 			FROM	information_schema.COLUMNS
-			WHERE	TABLE_SCHEMA = '" . addslashes($this->database) . "'
+			WHERE	TABLE_SCHEMA = '" . addslashes($databseName) . "'
 				AND	TABLE_NAME = '" . addslashes($tableName) . "'
 		";
 		return $this->fetchAll($sql);

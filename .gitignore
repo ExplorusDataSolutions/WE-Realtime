@@ -7,3 +7,7 @@ realtime_tool.conf.php
 tests/
 library/
 application/views/scripts/realtime
+
+api/stationList*.txt
+api/basinList.txt
+api/datatypeList.txt

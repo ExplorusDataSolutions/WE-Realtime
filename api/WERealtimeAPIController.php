@@ -42,24 +42,28 @@ class WERealtimeAPIController {
 	/**
 	 * for API http://www.albertawater.com/awp/api/realtime/stations
 	 */
-	public function getStationList() {
+	public function getStationListWithLayerNames() {
 		$modelLayer = $this->getModel('Layer');
 		
-		// 691 total
-		$stationListWithXY = $modelLayer->getStationList();
-		// 691 total
-		$layerListByStation = $modelLayer->getLayerInfoByStation();
+		// 691 total, 601 total v2, [{$station,$x,$y},...]
+		$stationListWithGeom = $modelLayer->getStationList();
+		// 691 total, {$station_description:[{$layerid,$begintime,$endtime,$last4dyas,$records},...],...}
+		$stationLayerInfoMap = $modelLayer->getLayerInfoByStation();
 		// field name information
 		$layerList = $modelLayer->getLayerList();
-
+		
 		$result = array(); // for less json data
-		foreach ($stationListWithXY as $row) {
+		foreach ($stationListWithGeom as $row) {
 			$station = ucwords($row['station']);	// ucwords is important
 			
-			$layers = $layerListByStation[$station];
+			$layers = $stationLayerInfoMap[$station];
 			$last4days = array();
 			foreach ($layers as $layer) {
-				$last4days[] = array(intval($layer['layerid']), intval($layer['last4days']), intval($layer['records']));
+				$last4days[] = array(
+						intval($layer['layerid']),
+						intval($layer['last4days']),
+						intval($layer['records'])
+						);
 			}
 			
 			$result[] = array(
@@ -107,34 +111,7 @@ class WERealtimeAPIController {
 		
 		return $layerList;
 	}
-	public function getDataByLayer($request = '') {
-		$default = json_decode('
-		{
-		    "request" : "getdata",
-		    "serviceid" : 2,
-		    "layerid" : 1,
-		    "time" : {
-		        "begintime" : "' . date('Y-m-d H:i:s', time() - 3600 * 24 * 30) . '",
-		        "endtime" : "' . date('Y-m-d H:i:s', time()) . '" 
-		    },
-		    "bbox" : {
-		        "upperright" : {
-		            "latitude": 60,
-		            "longitude": -115
-		        },
-		        "bottomleft" : {
-		            "latitude" : 55,
-		            "longitude" : -116
-		        } 
-		    } 
-		}');
-		
-		$data = explode('=', file_get_contents("php://input"), 2);
-		$request = count($data) == 2 ? json_decode(urldecode($data[1])) : '';
-		if (!$request) {
-			$request = &$default;
-		}
-		
+	/*public function getLayerData($request) {
 		$modelLayer = $this->getModel('Layer');
 		$layerId = $request->layerid;
 		$layerInfo = $modelLayer->getLayerInfoById($layerId);pre($layerInfo,1);
@@ -176,89 +153,79 @@ class WERealtimeAPIController {
 		}
 		
 		return $result;
-	}
-	public function getDataByStation() {
-		$default = json_decode('
-		{
-		    "request" : "getdata",
-		    "serviceid" : 2,
-		    "layerid" : 1,
-		    "time" : {
-		        "begintime" : "' . date('Y-m-d H:i:s', time() - 3600 * 24 * 30) . '",
-		        "endtime" : "' . date('Y-m-d H:i:s', time()) . '" 
-		    },
-		    "station" : "Birch River Below Alice Creek" 
-		}');
+	}*/
+	public function getLayerData($request) {
+		$layerId = $request->layerId;
+		$stationDescription = $request->station;
 		
-		$request = json_decode(file_get_contents("php://input"));
-		if (!$request) {
-			$request = &$default;
-		}
-		
-		$layerId = $request->layerid;
-		$modelLayer = ML::instance('RealtimeLayer');
-		//$layerInfo = $modelLayer->getLayerInfo($layerId);
+		$modelStation = $this->getModel('Station');
+		$stationObj = $modelStation->getStationByDescription($stationDescription);
 		
 		$result = array(
-			'layerid' => $layerId,
-			'serviceid' => $request->serviceid,
-			'data' => array()
+			'layerId' => $layerId,
+			'station' => $stationObj->Id,
+			'data' => array(),
 		);
 		
-		$layerField = $layerInfo['field'];
-		//if ($layerInfo) {
-			$stationService = ML::instance('RealtimeStation');
-			$stationList = $stationService->getStationListByLayer($layerId, $request->station);
-			foreach ($stationList as $i => $row) {
-				$unit = $modelLayer->getLayerUnit($row['basin_id'], $row['infotype_id'], $row['station_strid'], $layerField);
+		$modelLayer = $this->getModel('Layer');
+		$layerInfo = $modelLayer->getLayerInfo($layerId);
+		
+		if ($layerInfo) {
+			$layers = $modelLayer->getLayerInfoByStation($stationObj->Id);
+			foreach ($layers as $row) {
+				if ($row['layerid'] != $layerId) continue;
 				
-				$endtime = $request->time->endtime;
-				if (!$endtime) {
-					$endtime = $row['endtime'];
-				}
-				$last4days = strtotime($endtime) - 3600 * 24 * 4;
-				$begintime = date('Y-m-d H:i:s', max($last4days, strtotime($request->time->begintime)));
-			
+				//$unit = $modelLayer->getLayerUnit($row['basin_id'], $row['infotype_id'], $row['station_strid'], $layerField);
+				
+				$endtime = empty($request->time->endtime) ? $row['endtime'] : $request->time->endtime;
+				$last4days = @strtotime($endtime) - 3600 * 24 * 4;
+				$begintime = @date('Y-m-d H:i:s', max($last4days, @strtotime($request->time->begintime)));
+				
 				$dataList = $modelLayer->getDataSeries(
-					$row['basin_id'], $row['infotype_id'], $row['station_strid'], $layerId,
-					$begintime, $request->time->endtime
+					$row['basin_id'], $row['datatype_id'], $stationObj->Id, $layerInfo->Field,
+					$begintime, $endtime
 				);
 				
-				$result['data'][] = array(
-					'layerid' => $layerId,
-					'layer' => $layerId,
-					'station' => $row['station'],
-					'unit' => $unit,
-					'readings' => $dataList
-				);
+				$result['data'] = $dataList;
 			}
-		//}
+		}
 		
 		return $result;
 	}
 	
-	public function basinList($request) {
-		$modelBasin = $this->getModel('Basin');
-		$version = isset($request->version) ? intval($request->version) : false;
-		return $modelBasin->getBasinListWithStatus($version);
+	/*
+	 * Ingesting
+	 */
+	public function ingestingVersionList($request) {
+		$modelLog = $this->getModel('Log');
+		$start = isset($request->start) ? intval($request->start) : 0;
+		$limit = isset($request->limit) ? intval($request->limit) : 25;
+		return $modelLog->getVersionList($start, $limit);
 	}
-	public function datatypeList() {
-		$modelDatatype = $this->getModel('Datatype');
-		$objs = $modelDatatype->getDatatypeListWithStatus();
+	public function startIngesting($request) {
+		$url = $request->url;
 		
-		return array_values($objs);
+		$modelLog = $this->getModel('Log');
+		$lastSerialInfo = $modelLog->getLastSerial();
+		if ($lastSerialInfo && !empty($lastSerialInfo['stop'])) {
+			$modelLog->updateIngestLog('stop ingesting', 0, $lastSerialInfo['serial']);
+		}
+		
+		$ch = curl_init ();
+		curl_setopt ( $ch, CURLOPT_URL, $url );
+		$response = curl_exec ( $ch );
+		curl_close ( $ch );
+		
+		return 'ok';
+	}
+	public function stopCurrentIngesting($request) {
+		$version = $request->version;
+		$modelLog = $this->getModel('Log');
+		$modelLog->stopIngesting($version);
+		
+		return 'ok';
 	}
 	
-	public function ingestingVersionList() {
-		$modelLog = $this->getModel('Log');
-		return $modelLog->getVersionList();
-	}
-	public function stationList() {
-		$modelStation = $this->getModel('Station');
-		$objs = $modelStation->getStationList();
-		
-		return $objs;
-	}
 	public function stationLayerList($request) {
 		$modelLayer = $this->getModel('Layer');
 		$station = isset($request->station) ? $request->station : '';
@@ -374,26 +341,13 @@ class WERealtimeAPIController {
 		return array('Versions' => count($textdataList));
 	}
 	
-	public function stopCurrentIngesting($request) {
-		$version = $request->version;
-		$modelLog = $this->getModel('Log');
-		return $modelLog->stopIngesting($version);
-	}
-	
 	/**
-	 * Check updates for Basins, Data types, and Stations
+	 * Basins
 	 */
-	public function checkBasinList() {
+	public function basinList($request) {
 		$modelBasin = $this->getModel('Basin');
-		$basinList = $modelBasin->parseBasinList();
-		
-		/*foreach ($basinList as &$row) {
-			if ($row['id'] == 7) {
-				$row['name'] .= ' changed';
-			}
-		}*/
-		
-		return $basinList;
+		$version = isset($request->version) ? intval($request->version) : false;
+		return $modelBasin->getBasinListWithStatus($version);
 	}
 	public function basinVersionList() {
 		$modelBasin = $this->getModel('Basin');
@@ -401,11 +355,60 @@ class WERealtimeAPIController {
 		
 		return $basinList;
 	}
+	public function checkBasinList() {
+		$modelBasin = $this->getModel('Basin');
+		
+		$cache_file = dirname(__FILE__) . '/basinList.txt';
+		if (file_exists($cache_file) && $cache_data = file_get_contents($cache_file)) {
+			$basinList = unserialize($cache_data);
+		} else {
+			$basinList = $modelBasin->parseBasinList();
+			file_put_contents($cache_file, serialize($basinList));
+		}
+		
+		return $basinList;
+	}
+	public function saveBasinList($request) {
+		$modelBasin = $this->getModel('Basin');
+		$basinList = $request->basinList;
+		
+		$version = $modelBasin->getLatestVersion() + 1;
+		$info = array('new' => 0, 'update' => 0, 'failed' => 0, 'version' => $version);
+		foreach ($basinList as $basin) {
+			$basin->Version = $version;
+			$basin->UpdateTime = @date('Y-m-d H:i:s');
+			$result = $modelBasin->saveBasin($basin);
+			is_integer($result) && $info['new']++;
+			$result === true && $info['update']++;
+			$result === false && $info['failed']++;
+		}
+		return $info;
+	}
+	/**
+	 * Data Types
+	 */
+	public function datatypeList($request) {
+		$modelDatatype = $this->getModel('Datatype');
+		$version = isset($request->version) ? intval($request->version) : false;
+		$objs = $modelDatatype->getDatatypeListWithStatus($version);
+		
+		return array_values($objs);
+	}
+	public function datatypeVersionList() {
+		$modelDatatype = $this->getModel('Datatype');
+		$datatypeList = $modelDatatype->getVersionList();
+		
+		return $datatypeList;
+	}
 	public function checkDatatypeList() {
+		$modelBasin = $this->getModel('Basin');
 		$modelDatatype = $this->getModel('Datatype');
 		
+		$basinVersion = $modelBasin->getLatestVersion();
+		$dataTypeVersion = $modelDatatype->getLatestVersion();
+		
 		$cache_file = dirname(__FILE__) . '/datatypeList.txt';
-		if (false && file_exists($cache_file) && $cache_data = file_get_contents($cache_file)) {
+		if (file_exists($cache_file) && $cache_data = file_get_contents($cache_file)) {
 			$basinDatatypeList = unserialize($cache_data);
 		} else {
 			$basinDatatypeList = $modelDatatype->parseDatatypeList();
@@ -430,13 +433,86 @@ class WERealtimeAPIController {
 		
 		return array_values($datatypeList);
 	}
+	public function saveDatatypeList($request) {
+		$dataTypeList = $request->dataTypeList;
+		$modelDatatype = $this->getModel('Datatype');
+		
+		$modelBasin = $this->getModel('Basin');
+		$basinVersion = $modelBasin->getLatestVersion();
+		$dataTypeVersion = $modelDatatype->getLatestVersion();
+		
+		if ($dataTypeVersion < $basinVersion) {
+			$info = array('success' => 0, 'failure' => 0);
+			
+			$dataTypeVersion = $basinVersion;
+			foreach ($dataTypeList as $dataType) {
+				$dataType->Version = $dataTypeVersion;
+				$dataType->UpdateTime = @date('Y-m-d H:i:s');
+				$result = $modelDatatype->saveDatatype($dataType);
+				$result ? $info['success']++ : $info['failure']++;
+			}
+			
+			return $info;
+		} else {
+			$message = sprintf ( 'Data Types version(%d) is not higher than Basins version(%d),'
+					. ' please check updates for Basin first', $dataTypeVersion, $basinVersion );
+			return array ('message' => $message );
+		}
+	}
+	/**
+	 * Stations
+	 */
+	public function stationList($request) {
+		$modelStation = $this->getModel('Station');
+		$objs = $modelStation->getStationList();
+		
+		return $objs;
+	}
+	public function stationListWithStatus($request) {
+		$modelStation = $this->getModel('Station');
+		
+		$version = isset($request->version) ? intval($request->version) : false;
+		$objs = $modelStation->getStationListWithStatus($version);
+		
+		return $objs;
+	}
+	public function stationVersionList() {
+		$modelStation = $this->getModel('Station');
+		$stationList = $modelStation->getVersionList();
+		
+		return $stationList;
+	}
 	public function checkStationList($request) {
 		$modelStation = $this->getModel('Station');
 		$basin_id = $request->basin_id;
 		$datatype_id = $request->datatype_id;
-		$stationList = $modelStation->parseStationsByBasinAndDatatype($basin_id, $datatype_id);
+		
+		$cache_file = dirname(__FILE__) . "/stationList-$basin_id-$datatype_id.txt";
+		if (file_exists($cache_file) && $cache_data = file_get_contents($cache_file)) {
+			$stationList = unserialize($cache_data);
+		} else {
+			$stationList = $modelStation->parseStationsByBasinAndDatatype($basin_id, $datatype_id);
+			file_put_contents($cache_file, serialize($stationList));
+		}
 		
 		return $stationList;
+	}
+	public function saveStationList($request) {
+		$modelStation = $this->getModel('Station');
+		
+		$version = $modelStation->getLatestVersion() + 1;
+		$stationList = $request->stationList;
+		
+		$info = array('success' => 0, 'failure' => 0);
+		foreach ($stationList as $station) {
+			$params = (array)$station;
+			$params['UpdateTime'] = @date('Y-m-d H:i:s');
+			$params['Version'] = $version;
+			$result = $modelStation->saveStation($params);
+			$result ? $info['success']++ : $info['failure']++;
+		}
+			
+		return $info;
 	}
 }
 ?>

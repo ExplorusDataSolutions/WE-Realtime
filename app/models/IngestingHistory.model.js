@@ -8,7 +8,8 @@ Ext.define('WERealtime.model.IngestingHistory', {
             {name: "end_time"},
             {name: "total"},
             {name: "final_status"},
-            {name: "status_time"}
+            {name: "status_time"},
+            {name: "unexpected_stop"},
         ]
     }
 });
@@ -28,4 +29,9 @@ Ext.regStore("WERealtime.store.ingestingHistory", {
             type: 'json',
         }
     },
+    // This is important for store.getAt(0)
+	sorters : [{
+		property : 'version',
+		direction : 'DESC',
+	}],
 })

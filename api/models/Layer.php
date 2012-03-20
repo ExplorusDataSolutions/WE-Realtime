@@ -13,7 +13,7 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 	
 	protected $properties = array (
 			'Id' => 'layerid',
-			'Abbrev' =>	'field',
+			'Field' =>	'field',
 			'Description' => 'description',
 			'OriginTextId' => 'text_id',
 	);
@@ -79,21 +79,29 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 		// 准备 postgresql 中的 stations 表
 		$tbname = $modelStation->createPgRealtimeStationList();
 		
-		// 联合 station_join5 表，从而获取有相同 station 名称的 station 的位置信息。注意，station_join5表中stn_name有重复
-		// 而且 同一个station_strid 可能对应了不同的 descriptor
+		// join station_join5，in order to get station lonlat information.
+		// Note that in station_join5, many rows have the same stn_name, for example:
+		// min(gid),max(gid),stn_name,count(*)
+		// 247;3464;"HUDSON BAY SHORELINE";35
+		// 601;3203;"UNNAMED CREEK AT THE MOUTH";9
+		// 337;2760;"SOURIS RIVER AT WEYBURN";6
+		// 950;3463;"UNNAMED RIVER AT THE MOUTH";5
+		// 199;582;"RED RIVER SHORELINE";5
+		// 983;2166;"MILLIGAN CREEK NEAR WADENA";4
+		// 334;2488;"GOOSEHUNTING CREEK NEAR BEATTY";4
 		$sql = "
 			SELECT	t.station
 					, ST_X(sj2.geom) AS x
 					, ST_Y(sj2.geom) AS y
 			FROM (
 				SELECT	sr.station_descriptor AS station
-						, MIN(sj.gid) AS gid
+						, MIN(sj.gid) AS gid	-- here we choose the first one
 				FROM	$tbname sr
 				LEFT JOIN
 						station_join5 AS sj
 					ON	LOWER(sj.stn_name) = LOWER(sr.station_descriptor)
 				GROUP BY
-						sr.station_descriptor	-- 如果将来需要station的重复数据，去掉此 group by 即可
+						sr.station_descriptor	-- stn_name duplicated, so we need 'group by' here
 			) t
 			LEFT JOIN
 					station_join5 AS sj2
@@ -104,15 +112,8 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 		";
 		return $this->connect('geometry')->fetchAll($sql);
 	}
-	public function getLayerInfo($layerid) {
-		$layerid = intval($layerid);
-		
-		$sql = "
-			SELECT	layerid, field, description
-			FROM		layer
-			WHERE		layerid = $layerid
-		";
-		return $this->connect('realtime')->fetch($sql);
+	public function getLayerInfo($layerId) {
+		return $this->getRecordByProperty('Id', $layerId);
 	}
 	public function getLayerUnit($basin_id, $infotype_id, $station_strid, $layerid) {
 		$basin_id = intval($basin_id);
@@ -128,7 +129,11 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 		";
 		return $this->connect('realtime')->fetchOne($sql);
 	}
-	public function getLayerInfoByStation() {
+	public function getLayerInfoByStation($station = null, $isDescription = false) {
+		$modelStation = $this->getModel('Station');
+		$station_latest_version = $modelStation->getLatestVersion();
+		
+		$field = $isDescription ? "descriptor" : "station_strid";
 		$sql = "
 			SELECT	s.descriptor
 					, sl.field
@@ -137,7 +142,9 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 					, sl.endtime
 					, sl.endtime > DATE_SUB(NOW(), INTERVAL 4 DAY) last4days
 					, sl.records
-			FROM	station s
+					, sl.basin_id
+					, sl.infotype_id
+			FROM	`" . $modelStation->getTable() . "` s
 			LEFT JOIN		-- use 'LEFT JOIN' to include those have no fields info in table station_layer
 					station_layer sl
 				ON	sl.basin_id = s.basin_id
@@ -146,32 +153,36 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 			LEFT JOIN
 					layer l
 				ON	sl.field = l.field
-			WHERE	s.status = 'current'
+			WHERE	s.version = '$station_latest_version'"
+					. ($station ? "
+				AND	s.$field = '" . addslashes($station) . "'" : '') . "
 			ORDER BY
 					s.descriptor, IF (l.description = '', l.field, l.description)
 			-- l.description and l.field controls the order on Flowchart app chart screen
 		";
-		$rows = $this->connect('realtime-tool')->fetchAll($sql);
+		$rows = $this->connect()->fetchAll($sql);
 		
 		$list = array();
 		foreach ($rows as $row) {
-			$station = ucwords($row['descriptor']);	// unify lowercase and uppercase
-			if (!isset($list[$station])) {
-				$list[$station] = array();
+			$description = ucwords($row['descriptor']);	// unify lowercase and uppercase
+			if (!isset($list[$description])) {
+				$list[$description] = array();
 			}
 			$layerid = $row['layerid']; // maybe empty
 			if ($layerid) {
-				$list[$station][] = array(
+				$list[$description][] = array(
 					'layerid' => $layerid,
 					'begintime' => $row['begintime'],
 					'endtime' => $row['endtime'],
 					'last4days' => $row['last4days'],
-					'records' => $row['records']
+					'records' => $row['records'],
+					'basin_id' => $row['basin_id'],
+					'datatype_id' => $row['infotype_id'],
 				);
 			}
 		}
 		
-		return $list;
+		return $station && !empty($list) ? array_pop($list) : $list;
 	}
 	public function saveLayerInfo($params) {
 		//return $this->saveRecordByProperty($params, array('basin_id'))
@@ -402,13 +413,13 @@ class WERealtime_Model_Layer extends ML_Model_Table {
 		$infotype_id = intval($infotype_id);
 		$station_strid = preg_replace('/[^0-9a-zA-Z]/', '', $station_strid);
 		
-		$tbname = 'basin_'.$basin_id.'_datatype_'.$infotype_id.'_'.strtolower($station_strid);
+		$modelTextdata = $this->getModel('Textdata');
+		$dbname = $modelTextdata->getRealtimeDataDbname();
+		$tbname = $modelTextdata->getRealtimeDataTbname($basin_id, $infotype_id, $station_strid);
 		
-		$sql = "SHOW TABLES LIKE '$tbname'";
-		$tableList = $this->connect('realtime-data')->fetchAll($sql);
-		
+		$tableInfo = $this->connect()->describeTable($tbname, $dbname);
 		$result = array();
-		if (!empty($tableList) && $field) {
+		if (!empty($tableInfo) && $field) {
 			global $cfg;
 			
 			$sql = "

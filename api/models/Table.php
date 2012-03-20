@@ -98,6 +98,9 @@ abstract class ML_Model_Table extends ML_Model_Dbconn {
 			SELECT	" . $this->getPropertiesString() . "
 			FROM	`" . $this->getTable() . "`
 			WHERE	" . (empty($options['WHERE']) ? 'TRUE' : $options['WHERE'])
+				. (empty($options['GROUPBY']) ? '' : '
+			GROUP BY
+					' . $options['GROUPBY'])
 				. (empty($options['ORDERBY']) ? '' : '
 			ORDER BY
 					' . $options['ORDERBY'])
@@ -116,7 +119,7 @@ abstract class ML_Model_Table extends ML_Model_Dbconn {
 	protected function getInsertString($params) {
 		$array = array();
 		foreach ($this->properties as $name => $field) {
-			if (isset($params[$name])) {
+			if (isset($params[$name]) && $field) {
 				$array[] = "`" . $field . "` = '" . addslashes($params[$name]) . "'";
 			}
 		}
@@ -144,21 +147,20 @@ abstract class ML_Model_Table extends ML_Model_Dbconn {
 			return false;
 		} else {
 			if ($record) {
-				$fieldName = $this->getPropertyField($propertyName);
 				$sql = '';
 				foreach ($array as $propertyName => $propertyValue) {
+					$fieldName = $this->getPropertyField($propertyName);
 					if ($sql == '') {
 						$sql = "
 							UPDATE	" . $this->getTable() . "
 							SET		" . $this->getInsertString($params) . "
-							WHERE	`$fieldName` = '" . addslashes($propertyValue) . "'
-								";
+							WHERE	`$fieldName` = '" . addslashes($propertyValue) . "'";
 					} else {
 						$sql .= "
 								AND	`$fieldName` = '" . addslashes($propertyValue) . "'";
 					}
 				}
-				return $this->connect()->query($sql);
+				return $this->connect()->query($sql)->affectedRows() ? true : null;
 			} else {
 				$sql = "
 					INSERT INTO

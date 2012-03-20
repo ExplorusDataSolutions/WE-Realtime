@@ -26,12 +26,23 @@ class WERealtime_Model_Basin extends ML_Model_Table {
 	}
 
 	
-	protected function getLatestVersion() {
+	public function getLatestVersion() {
 		$sql = "
-			SELECT	MAX(version)
+			SELECT	MAX(`" . $this->getPropertyField('Version') . "`)
 			FROM	`" . $this->getTable() . "`
 		";
 		return $this->connect()->fetchOne($sql);
+	}
+	public function getVersionList() {
+		$sql = "
+			SELECT	`" . $this->getPropertyField('Version') . "`
+					, COUNT(*) basins_number
+					, `" . $this->getPropertyField('UpdateTime') . "`
+			FROM	`" . $this->getTable() . "`
+			GROUP BY
+					`" . $this->getPropertyField('Version') . "`
+		";
+		return $this->connect()->fetchAll($sql);
 	}
 	protected function updateStatus($objs) {
 		foreach ($objs as $obj) {
@@ -156,35 +167,7 @@ class WERealtime_Model_Basin extends ML_Model_Table {
 		return $basins;
 	}
 	
-	function saveBasinList($basins, $version) {
-		$version = intval($version);
-		
-		foreach ($basins as $i => $basin) {
-			$basin_id = intval($basin['id']);
-			$descriptor = addslashes(trim($basin['name']));
-			
-			$sql = "
-				INSERT INTO
-						basin
-				SET		basin_id = $basin_id,
-						descriptor = '$descriptor',
-						update_time = NOW(),
-						version = $version,
-						status = ''
-			";
-			$this->connect('realtime_tool')->query($sql);
-		}
-	}
-	
-	public function getVersionList() {
-		$sql = "
-			SELECT	`" . $this->getPropertyField('Version') . "`
-					, COUNT(*) basins_number
-					, `" . $this->getPropertyField('UpdateTime') . "`
-			FROM	`" . $this->getTable() . "`
-			GROUP BY
-					`" . $this->getPropertyField('Version') . "`
-		";
-		return $this->connect()->fetchAll($sql);
+	function saveBasin($Basin) {
+		return $this->saveRecordByProperty((array)$Basin, array('Id', 'Version'));
 	}
 }

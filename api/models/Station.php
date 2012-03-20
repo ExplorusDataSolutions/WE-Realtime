@@ -13,9 +13,12 @@ class WERealtime_Model_Station extends ML_Model_Table {
 	
 	protected $properties = array (
 			'Id' => 'station_strid',
+			'Code' => 'code',
 			'Description' => 'descriptor',
 			'BasinId' => 'basin_id',
 			'DatatypeId' => 'infotype_id',
+			'Version' => 'version',
+			'UpdateTime' => 'update_time',
 	);
 	public function getTable() {
 		return 'station';
@@ -28,36 +31,43 @@ class WERealtime_Model_Station extends ML_Model_Table {
 	}
 	
 	
-	function getStationListByLayer($layerid, $station_descriptor) {
-		$sql = "
-			SELECT	s.station_strid
-					, s.descriptor station
-					, sl.basin_id
-					, sl.infotype_id
-					, sl.begintime
-					, sl.endtime
-			FROM	station s
-			JOIN	station_layer sl	-- station_layer table is created from awp_b database, so it is more reliable
-				ON	s.station_strid = sl.station_strid
-				AND	s.basin_id = sl.basin_id
-				AND	s.infotype_id = sl.infotype_id
-		--	JOIN	layer l			-- use directly 'strid' instead of 'numberid' for now
-		--		ON	sf.field = l.field
-			WHERE	s.status = 'current'
-				AND	sl.field = '" . addslashes($layerid) . "'
-				AND	s.descriptor = '" . addslashes($station_descriptor) . "'
-		";
-		
-		return $this->connect('realtime-tool')->fetchAll($sql);
+	public function getStationByDescription($description) {
+		return $this->getRecordByProperty('Description', $description);
 	}
-	function getStationList() {
+	
+	public function getLatestVersion() {
+		$sql = "
+			SELECT	MAX(`" . $this->getPropertyField('Version') . "`)
+			FROM	`" . $this->getTable() . "`
+			WHERE	TRUE
+		";
+		return $this->connect()->fetchOne($sql);
+	}
+	public function getVersionList() {
+		$sql = "
+			SELECT	`" . $this->getPropertyField('Version') . "`
+					, COUNT(*) station_total
+					, `" . $this->getPropertyField('UpdateTime') . "`
+			FROM	`" . $this->getTable() . "`
+			GROUP BY
+					`" . $this->getPropertyField('Version') . "`
+		";
+		return $this->connect()->fetchAll($sql);
+	}
+	public function getStationList($version = null, $distinct = false) {
+		if (is_null($version)) {
+			$version = $this->getLatestVersion();
+		}
+		$version = intval($version);
+		
 		$options = array(
-			'WHERE' => "status = 'current'",
-			'ORDERBY' => $this->getPropertyField('Description'),
+				'WHERE' => "`" . $this->getPropertyField('Version') . "` = '$version'",
+				'ORDERBY' => $this->getPropertyField('Description'),
+				'GROUPBY' => $distinct ? 'station_strid' : '',
 		);
 		
 		$objs = $this->getRecordList($options);
-		
+	
 		foreach ($objs as $obj) {
 			$obj->BasinId = intval($obj->BasinId);
 			$obj->DatatypeId = intval($obj->DatatypeId);
@@ -66,6 +76,40 @@ class WERealtime_Model_Station extends ML_Model_Table {
 		}
 		
 		return $objs;
+	}
+	public function getStationListWithStatus($version = null) {
+		if ($version == null) {
+			$version = $this->getLatestVersion();
+		}
+		$version = intval($version);
+		
+		$list2 = $this->getStationList($version);
+		$list1 = $this->getStationList($version - 1);
+		
+		$objMap = array();
+		foreach ($list1 as $obj) {
+			$obj->Status = 'deleted';
+			$objMap[$obj->Id2] = $obj;
+		}
+		
+		foreach ($list2 as $i => $obj) {
+			$Id2 = $obj->Id2;
+			if (isset($objMap[$Id2])) {
+				$o = $objMap[$Id2];
+				if ($obj->Description == $o->Description) {
+					$obj->Status = 'same';
+				} else {
+					$obj->Status = 'changed';
+					$obj->oldDescription = $o->Description;
+				}
+				
+				unset($objMap[$Id2]);
+			} else {
+				$obj->Status = 'new';
+			}
+		}
+		
+		return array_values(array_merge($objMap, $list2));
 	}
 	function getListByBasinInfotypeId($basin_id, $infotype_id) {
 		$basin_id = intval($basin_id);
@@ -395,7 +439,7 @@ class WERealtime_Model_Station extends ML_Model_Table {
 		$sql = "
 			SELECT	COUNT(*)
 			FROM	station_join";
-		$total_in_mysql = $this->connect('realtime-tool')->fetchColumn($sql);
+		$total_in_mysql = $this->connect()->fetchColumn($sql);
 		
 		if ($total_in_pgsql != $total_in_mysql) {
 			$sql = "
@@ -491,8 +535,8 @@ class WERealtime_Model_Station extends ML_Model_Table {
 	 * 从 MySQL 数据库的 awp 库中提取出 station list，插入 PostgreSQL 数据库的 station_realtime 表，
 	 * 方便与 station_join5 中的 stn_name 进行对比，从而取得既有实时数据，又有位置数据的 stations
 	 */
-	public function createPgRealtimeStationList() {
-		$sql = "SELECT 1 FROM pg_tables WHERE tablename = 'station_realtime'";
+	public function createPgRealtimeStationList($tmp_tbname = 'station_realtime') {
+		$sql = "SELECT 1 FROM pg_tables WHERE tablename = '$tmp_tbname'";
 		$tb_existing = $this->connect('geometry')->fetchOne($sql);
 		
 		if ($tb_existing != '1') {
@@ -524,43 +568,38 @@ class WERealtime_Model_Station extends ML_Model_Table {
 			FROM	station_realtime";
 		$total_in_pgsql = $this->connect('geometry')->fetchOne($sql);
 		
+		$station_latest_version = $this->getLatestVersion();
 		$sql = "
 			SELECT	COUNT(DISTINCT descriptor)	-- Note: count distinct, should be 691
 			FROM	station s
-			WHERE	s.status = 'current'
+			WHERE	s.version = '$station_latest_version'
 		";
-		$total_in_mysql = $this->connect('realtime-tool')->fetchOne($sql);
+		$total_in_mysql = $this->connect()->fetchOne($sql);
 		
 		if ($total_in_pgsql != $total_in_mysql) {
-			$sql = "
-				SELECT	descriptor
-				FROM	station s
-				WHERE	s.status = 'current'
-				GROUP BY
-						descriptor	-- Note: here we use 'descriptor' other than 'station_strid', case insensitive
-			";
-			$rows = $this->connect('realtime-tool')->fetchAll($sql);
+			$objs = $this->getStationList($station_latest_version, true);
 			
 			$values = array();
-			foreach ($rows as $i => $row) {
-				$values[] = "(" . ($i + 1) . ", '" . str_replace("'", "''", $row['descriptor']) . "')";
+			foreach ($objs as $i => $obj) {
+				$description = str_replace("'", "''", $obj->Description);
+				$values[] = "(" . ($i + 1) . ", '" . $description . "')";
 			}
 			if (!empty($values)) {
-				$this->connect('geometry')->query("TRUNCATE TABLE station_realtime");
+				$this->connect('geometry')->query("TRUNCATE TABLE $tmp_tbname");
 				
 				$sql = "
 					INSERT INTO
-							station_realtime (
+							$tmp_tbname (
 								gid,
 								station_descriptor
 							)
-					VALUES ".implode("
-					, ", $values);
+					VALUES	" . implode("
+							, ", $values);
 				$this->connect('geometry')->query($sql);
 			}
 		}
 		
-		return 'station_realtime';
+		return $tmp_tbname;
 	}
 	
 	function fetchHtml($url) {
@@ -696,6 +735,9 @@ class WERealtime_Model_Station extends ML_Model_Table {
 				$this->connect()->query($sql);
 			}
 		}
+	}
+	public function saveStation($params) {
+		return $this->saveRecordByProperty($params, array('Id', 'BasinId', 'DatatypeId', 'Version'));
 	}
 }
 ?>

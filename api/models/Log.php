@@ -42,8 +42,9 @@ class WERealtime_Model_Log extends ML_Model_Table {
 	public function isStopIngesting() {
 		return $this->Name == 'stop ingesting' && $this->Value == 1;
 	}
-	public function stopIngesting($serial = 0) {
-		return $this->updateIngestLog('stop ingesting', 1, $serial);
+	public function stopIngesting($version) {
+		$lastSerial = $this->getLastSerial();
+		return $this->updateIngestLog('stop ingesting', $version, $lastSerial['serial']);
 	}
 	
 	public function getIngestLog($name = '') {
@@ -112,9 +113,7 @@ class WERealtime_Model_Log extends ML_Model_Table {
 				UPDATE `" . $this->getTable() . "`
 				SET	`value` = '".addslashes($value)."'
 					, `time` = NOW()
-				WHERE	`type` = 'ingest'
-					AND	`name` = '".addslashes($name)."'
-					AND	`serial` = $serial
+				WHERE	id = $id
 			";
 		} else {
 			$sql = "
@@ -131,6 +130,38 @@ class WERealtime_Model_Log extends ML_Model_Table {
 		
 		return $this->connect()->affectedRows(); 
 	}
+	function updateCommand($name, $value = '') {
+		$sql = "
+			SELECT	id
+			FROM	`" . $this->getTable() . "`
+			WHERE	`type` = 'command'
+				AND	`name` = '".addslashes($name)."'
+				AND	`value` = '".addslashes($value)."'
+		";
+		$id = $this->connect()->fetchOne($sql);
+	
+		if ($id) {
+			$sql = "
+				UPDATE `" . $this->getTable() . "`
+				SET	`value` = '".addslashes($value)."'
+					, `time` = NOW()
+				WHERE	`id` = $id
+			";
+		} else {
+			$sql = "
+				INSERT INTO
+						`" . $this->getTable() . "`
+				SET	`type` = 'command'
+					, `serial` = 0
+					, `time` = NOW()
+					, `name` = '".addslashes($name)."'
+					, `value` = '".addslashes($value)."'
+			";
+		}
+		$this->connect()->query($sql);
+		
+		return $this->connect()->affectedRows(); 
+	}
 	public function debug($message) {
 		echo @date("Y-m-d H:i:s ")
 			. preg_replace('/.*\./', '.', sprintf("%.4f", round(microtime(true), 4)))
@@ -138,10 +169,12 @@ class WERealtime_Model_Log extends ML_Model_Table {
 	}
 	
 	function getUpdatingStations() {
+		$modelStation = $this->getModel('Station');
+		$version = $modelStation->getLatestVersion();
 		$sql = "
 			SELECT	s.basin_id
 					, s.infotype_id
-					, s.html_version	AS station_version
+					, s.`" . $modelStation->getPropertyField('Version') . "` version
 					, s.station_strid
 					, s.descriptor		AS station_descriptor
 					, t.version			AS text_version
@@ -154,22 +187,22 @@ class WERealtime_Model_Log extends ML_Model_Table {
 						, t.basin_id
 						, t.infotype_id
 						, t.station_strid
+						, t.station_version
 						, t.version
 						, t.records_num
 						, t.inserted_num
 				FROM	textdata AS t
 				WHERE	t.status = 'current'
-				--	GROUP BY	-- 避免出现多个版本都是 current
-				--			t.basin_id, t.infotype_id, t.station_strid
 			) t
-				ON	t.basin_id		= s.basin_id
-				AND	t.infotype_id	= s.infotype_id
-				AND	t.station_strid = s.station_strid
+				ON	t.basin_id			= s.basin_id
+				AND	t.infotype_id		= s.infotype_id
+				AND	t.station_strid		= s.station_strid
+				AND	t.station_version	= s.version
 			WHERE
-					s.status = 'current'
+					s.`" . $modelStation->getPropertyField('Version') . "` = $version
 			ORDER BY
-			--		s.basin_id, s.infotype_id, s.station_strid
-					s.station_strid, s.infotype_id, s.basin_id
+					s.basin_id, s.infotype_id, s.station_strid
+			--		s.station_strid, s.infotype_id, s.basin_id
 		";
 		
 		return $this->connect()->fetchAll($sql);
@@ -206,7 +239,7 @@ class WERealtime_Model_Log extends ML_Model_Table {
 			$v = $row ['version'];
 			$s = $row ['serial'];
 			if (empty ( $logs [$v] [$s] )) {
-				$logs [$v] [$s] = array ();
+				$logs [$v] [$s] = array ('serial' => $s);
 				$list [] = &$logs [$v] [$s];
 			}
 			$n = $row ['name'];
@@ -245,7 +278,6 @@ class WERealtime_Model_Log extends ML_Model_Table {
 					, b.time
 			FROM	(
 				SELECT	value AS version	-- 1 ingesting version can be finished by many times(1 time is called 1 serial)
-						, MAX(serial) serial
 				FROM	`" . $this->getTable() . "`
 				WHERE	name = 'start ingesting'
 				GROUP BY
@@ -253,11 +285,19 @@ class WERealtime_Model_Log extends ML_Model_Table {
 				ORDER BY
 				 		0+value DESC	-- convert from string to number
 				LIMIT $start, $limit
-			) AS a
+			) AS a	-- version list
+			JOIN	(
+				SELECT	serial
+						, value AS version
+				FROM	`" . $this->getTable() . "`
+				WHERE	name = 'start ingesting'
+			) AS c
+				ON	a.version = c.version
 			JOIN	`" . $this->getTable() . "` AS b
-				ON	a.serial = b.serial	-- get other information of this serial
+				ON	c.serial = b.serial	-- get other information of this serial
 			ORDER BY
-				b.serial DESC
+				b.id	-- This affects 'final_status' below
+						-- Also important for 'end_time' of 'finish ingesting'
 		";
 		$rows = $this->connect()->fetchAll($sql);
 		
@@ -266,23 +306,36 @@ class WERealtime_Model_Log extends ML_Model_Table {
 		foreach ($rows as $row) {
 			$v = $row['version'];
 			$s = $row['serial'];
-			if (empty($logs[$v][$s])) {
-				$logs[$v][$s] = array();
-				$list[] = &$logs[$v][$s];
+			if (empty($logs[$v])) {
+				$logs[$v] = array();
+				$list[] = &$logs[$v];
 			}
 			$n = $row['name'];
 			if ($n == 'start ingesting') {
-				$logs[$v][$s]['version'] = intval($row['value']);
-				$logs[$v][$s]['start_time'] = $row['time'];
+				$logs[$v]['version'] = intval($row['value']);
+				$logs[$v]['start_time'] = $row['time'];
 			} elseif ($n == 'finish ingesting') {
-				$logs[$v][$s]['total'] = intval($row['value']);
-				$logs[$v][$s]['end_time'] = $row['time'];
+				if (empty($logs[$v]['total'])) {
+					//$logs[$v]['total'] = intval($row['value']);
+				} else {
+					//$logs[$v]['total'] = intval($row['value']);
+				}
+				$logs[$v]['end_time'] = $row['time'];
 			} elseif ($n == 'current ingesting') {
-				$logs[$v][$s]['final_status'] = $row['value'];
-				$logs[$v][$s]['status_time'] = $row['time'];
+				$logs[$v]['end_time'] = '';
+				
+				$logs[$v]['final_status'] = $row['value'];
+				$logs[$v]['status_time'] = $row['time'];
+				if (preg_match('/progress: (\d+)\/(\d+)/', $row['value'], $m)) {
+					if (empty($logs[$v]['total'])) {
+						$logs[$v]['total'] = intval($m[1]);
+					} else {
+						$logs[$v]['total'] += intval($m[1]);
+					}
+				}
 			} else {
-				$logs[$v][$s][$n] = $row['value'];
-				$logs[$v][$s][$n . '_time'] = $row['time'];
+				$logs[$v][$n] = $row['value'];
+				$logs[$v][$n . '_time'] = $row['time'];
 			}
 		}
 		return $list;

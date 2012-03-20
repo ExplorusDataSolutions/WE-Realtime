@@ -11,9 +11,9 @@ class PostgreSQL {
 	}
 	
 	function connect() {
-		$this->link = pg_connect("dbname=$this->database user=$this->username password=$this->password");
-
+		$this->link = @pg_connect("dbname=$this->database user=$this->username password=$this->password");
 		if ( !$this->link ) {
+			header("HTTP/1.1 501 Can not connect $this->username@$this->hostname");
 			die("Can not connect $this->username@$this->hostname");
 		}
 	}

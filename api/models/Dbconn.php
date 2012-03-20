@@ -97,8 +97,8 @@ class ML_Model_Dbconn {
 		return $this->db->affectedRows();
 	}
 	
-	public function describeTable($tableName) {
-		return $this->db->describeTable($tableName);
+	public function describeTable($tableName, $databaseName) {
+		return $this->db->describeTable($tableName, $databaseName);
 	}
 }
 ?>
