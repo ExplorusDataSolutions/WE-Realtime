@@ -268,10 +268,10 @@ var app = {
 		})
 		var showCard = function() {
 			var WEData = card.WEData;
-			var station_strid = WEData.get('strid');
-			var station_description = WEData.get('description');
+			var station_strid = WEData.get('id');
+			var station_description = WEData.get('Description');
 			var stationStore = Ext.getStore("WERealtime.store.stationList");
-			var recordIndex = stationStore.find('strid', station_strid);
+			var recordIndex = stationStore.find('id', station_strid);
 			var record = recordIndex != -1 ? stationStore.getAt(recordIndex) : false;
 			var dt = record ? record.get('layers_update_time') : '';
 			var html = [ '<div style="line-height: 0.7em">',
@@ -315,7 +315,7 @@ var app = {
 				cards.layerDataListCard.WEData = {
 					basin_id : record.get('basin_id'),
 					datatype_id : record.get('datatype_id'),
-					station_strid : card.WEData.get('strid'),
+					station_strid : card.WEData.get('id'),
 					layer : record.get('field'),
 				}
 				me.goForward(cards.layerDataListCard);
