@@ -1,7 +1,7 @@
 //Ext.Loader.setConfig({enabled:true});
 
 Ext.Ajax.on('requestexception', function(conn, response, options) {
-	alert('Server error: [' + response.status + '] ' + response.statusText);
+	console.log('Server error: [' + response.status + '] ' + response.statusText);
 })
 
 var app = {
