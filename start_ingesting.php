@@ -1,5 +1,6 @@
 <?php
-ignore_user_abort();
+ignore_user_abort(true);
+//set_time_limit(0);
 
 require_once 'conf.php';
 require_once 'api/WERealtimeAPIController.php';
@@ -26,7 +27,7 @@ if (0) {
 	$station_version	= 0;
 	
 	$url = $modelTextdata->ingestUrl($basin_id, $infotype_id, $station_strid);
-	$modelLog->debug($url);
+	debug($url);
 	
 	$textdata = $modelTextdata->ingestTextdata($url);
 	pre($textdata,1);
@@ -87,12 +88,12 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 	}pre($current_station,1);*/
 	
 	$serial = $modelLog->addIngestLog('start ingesting', $updatingVersion);
-	$modelLog->debug("start: version $updatingVersion, serial: $serial");
+	debug("start: version $updatingVersion, serial: $serial");
 	
 	/*
 	pre($last_station,1);
 	if ($last_station) {
-		$modelLog->debug("last unfinished station: $last_station[station_strid], $last_station[infotype_id]");pre('xx',1);
+		debug("last unfinished station: $last_station[station_strid], $last_station[infotype_id]");pre('xx',1);
 		$lastIngestLog = $modelLog->getIngestLog('last ingesting');
 		if ($lastIngestLog && $lastIngestLog->Serial < $serial) {
 			$modelLog->updateIngestLog(
@@ -139,17 +140,18 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 			if ($currentTextdata) {
 				// case 1: an existing text_id with 'current' status and previous 'version' leads to here
 				if ($station['text_version'] && $station['text_version'] != $updatingVersion) {
-					$modelLog->debug("Old textdata $station[text_id] current status cleared");
+					debug("Old textdata $station[text_id] current status cleared");
 					// clear old textdata 'current' status
 					$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $station['text_version'], '');
 					continue;
 				}
 				
-				$modelLog->debug("Existing textdata: $station_strid, $basin_id, $infotype_id, version: $updatingVersion");
+				debug("Existing textdata: $station_strid, $basin_id, $infotype_id, version: $updatingVersion");
 				// 把当前记录更新为 'current' 状态
 				$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $currentTextdata->Version, 'current');
 				
 				$textdata = $currentTextdata->Text;
+				$text_id = $currentTextdata->Id;
 			} else {
 				// 记录当前正在抓取的 station
 				$modelLog->updateIngestLog(
@@ -158,13 +160,13 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 					$serial
 				);
 				
-				$modelLog->debug("start ingesting... $station_strid, $infotype_id, $basin_id");
+				debug("start ingesting... $station_strid, $infotype_id, $basin_id");
 				
 				$url = $modelTextdata->ingestUrl($basin_id, $infotype_id, $station_strid);
-				$modelLog->debug($url);
+				debug($url);
 				
 				$textdata = $modelTextdata->ingestTextdata($url);
-				$modelLog->debug('ok. Textdata size: ' . strlen($textdata));
+				debug('ok. Textdata size: ' . strlen($textdata));
 				
 				$error = '';
 				if ($textdata) {
@@ -187,10 +189,10 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 					$error,
 					$updatingVersion
 				);
-				$modelLog->debug("Textdata $text_id saved");
+				debug("Textdata $text_id saved");
 				
 				if ($text_id && $station['text_version'] && $station['text_version'] != $updatingVersion) {
-					$modelLog->debug("Old textdata $station[text_id] current status cleared");
+					debug("Old textdata $station[text_id] current status cleared");
 					// clear old textdata 'current' status
 					$modelTextdata->setStatus($basin_id, $infotype_id, $station_strid, $station['text_version'], '');
 				}
@@ -199,16 +201,16 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 			// ignore empty data
 			if ($textdata) {
 				$result = $modelTextdata->parseContent($textdata);
-				$modelLog->debug('Textdata parsed');
+				debug('Textdata parsed');
 				
 				// save useful information
 				$modelTextdata->updateTextdataData($text_id, $basin_id, $infotype_id, $station_strid, $result);
 				$modelTextdata->updateTextdataLayerInfo($basin_id, $infotype_id, $station_strid);
-				$modelLog->debug('Statistic data saved');
+				debug('Statistic data saved');
 			}
 			
 			$counter++;
-			$modelLog->debug("Textdata $text_id ingesting finish");//pre($counter,1);
+			debug("Textdata $text_id ingesting finish");//pre($counter,1);
 		}
 	}
 	// 记录结束抓取
@@ -217,7 +219,7 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 	$ingest			= $modelLog->getIngestLog();
 	$start_ingest	= $modelLog->getIngestLog('start ingesting');
 	$finish_ingest	= $modelLog->getIngestLog('finish ingesting');
-	pre($ingest);
+	
 	if ($ingest->Name == 'current ingesting') {
 		$output = "The No. $ingest->Serial Ingesting hangs,"
 			. " starts from $start_ingest->Time,"
@@ -232,11 +234,33 @@ if (!$lastSerialInfo || empty($lastSerialInfo['stop'])) {
 } else {
 	$output = "Ingesting is disabled by command, at $lastSerialInfo[stop_time]";
 }
-pre($output,1);
+debug($output);
+
 if (EMAIL_REPORT_TO) {
 	$success = mail(EMAIL_REPORT_TO, 'Realtime Data Ingesting Tool Report', $output);
 	echo 'Email "Realtime Data Ingesting Tool Report" sent ' . ($success ? 'success' : 'failure') . '<br />';
 	echo 'Message:<br />' . $output;
+}
+
+function debug($message) {
+	static $logfile = '';
+	if (!$logfile) {
+		$logfile = dirname(__FILE__) . '/logs/' . date('Y/m/Y-m-d H.i.s') . '.log';
+		if (!file_exists(dirname($logfile))) {
+			mkdir(dirname($logfile), 0777, true);
+		}
+		$fp = fopen($logfile, 'w');
+	} else {
+		$fp = fopen($logfile, 'a');
+	}
+	$text = @date("Y-m-d H:i:s ")
+		. preg_replace('/.*\./', '.', sprintf("%.4f", round(microtime(true), 4)))
+		. " - $message";
+	echo $text. '<br />';
+	if ($fp) {
+		fwrite($fp, "$text\n");
+		fclose($fp);
+	}
 }
 
 function mail2($to, $subject, $message, $from, $username, $password) {

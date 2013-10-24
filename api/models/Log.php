@@ -93,6 +93,7 @@ class WERealtime_Model_Log extends ML_Model_Table {
 				, `value` = '".addslashes($value)."'
 			";
 		$this->connect()->query($sql);
+		$this->connect()->query("COMMIT");
 		
 		return $serial;
 	}
