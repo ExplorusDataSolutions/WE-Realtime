@@ -7,7 +7,7 @@ if (!empty($_POST['data'])) {
 	
 	
 	$ch = curl_init ();
-	curl_setopt ( $ch, CURLOPT_URL, 'http://localhost/ZF2/WE-Realtime/' );
+	curl_setopt ( $ch, CURLOPT_URL, 'http://localhost/' );
 	curl_setopt ( $ch, CURLOPT_RETURNTRANSFER, TRUE );
 	curl_setopt ( $ch, CURLOPT_POST, TRUE );
 	//添加变量
